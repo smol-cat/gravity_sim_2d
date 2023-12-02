@@ -1,20 +1,20 @@
-use std::collections::HashSet;
-use std::ffi::CStr;
-use std::os::raw::c_void;
-
 use anyhow::{anyhow, Ok, Result};
-use log::{debug, error, trace, warn};
+use std::os::raw::c_void;
+use std::{collections::HashSet, ffi::CStr};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
+use crate::data::common_data::CommonData;
 use crate::data::globals;
+use log::{debug, error, trace, warn};
 
 pub unsafe fn create_instance(
-    entry: &Entry,
     window: &Window,
-) -> Result<(Instance, vk::DebugUtilsMessengerEXT)> {
+    entry: &Entry,
+    common: &mut CommonData,
+) -> Result<Instance> {
     let app_info = vk::ApplicationInfo::builder()
         .application_name(b"Sample\0")
         .application_version(vk::make_version(1, 0, 0))
@@ -66,12 +66,11 @@ pub unsafe fn create_instance(
 
     let instance: Instance = entry.create_instance(&info, None)?;
 
-    let mut messenger = vk::DebugUtilsMessengerEXT::default();
     if globals::VALIDATION_ENABLED {
-        messenger = instance.create_debug_utils_messenger_ext(&debug_info, None)?;
+        common.messenger = instance.create_debug_utils_messenger_ext(&debug_info, None)?;
     }
 
-    Ok((instance, messenger))
+    Ok(instance)
 }
 
 extern "system" fn debug_callback(

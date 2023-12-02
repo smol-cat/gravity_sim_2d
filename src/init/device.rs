@@ -5,38 +5,16 @@ use log::{info, warn};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk;
 
-use crate::data::common_data::CommonData;
+use crate::data::common_data::{self, CommonData};
 use crate::data::globals;
 use crate::utils::queue_family_indices::QueueFamilyIndices;
 
-pub unsafe fn get_physical_device(
-    instance: &Instance,
-    surface: vk::SurfaceKHR,
-) -> Result<vk::PhysicalDevice> {
-    for physical_device in instance.enumerate_physical_devices()? {
-        let properties = instance.get_physical_device_properties(physical_device);
-
-        if let Err(error) = check_physical_device(instance, surface, physical_device) {
-            warn!(
-                "Skipping physical device: {}: {}",
-                properties.device_name, error
-            );
-            continue;
-        }
-
-        info!("Picked physical device: {}", properties.device_name);
-        return Ok(physical_device);
-    }
-
-    Err(anyhow!("No suitable devices found"))
-}
-
 unsafe fn check_physical_device(
     instance: &Instance,
-    surface: vk::SurfaceKHR,
+    common: &CommonData,
     physical_device: vk::PhysicalDevice,
 ) -> Result<()> {
-    QueueFamilyIndices::get(instance, surface, physical_device)?;
+    QueueFamilyIndices::get(instance, common, physical_device)?;
     check_physical_device_extensions(instance, physical_device)?;
     Ok(())
 }
@@ -61,13 +39,30 @@ unsafe fn check_physical_device_extensions(
     }
 }
 
+pub unsafe fn pick_physical_device(instance: &Instance, common: &mut CommonData) -> Result<()> {
+    for physical_device in instance.enumerate_physical_devices()? {
+        let properties = instance.get_physical_device_properties(physical_device);
+
+        if let Err(error) = check_physical_device(instance, common, physical_device) {
+            warn!(
+                "Skipping physical device: {}: {}",
+                properties.device_name, error
+            );
+        } else {
+            info!("Picked physical device: {}", properties.device_name);
+            common.physical_device = physical_device;
+            return Ok(());
+        }
+    }
+
+    Err(anyhow!("No suitable devices found"))
+}
+
 pub unsafe fn create_logical_device(
     instance: &Instance,
-    surface: vk::SurfaceKHR,
-    physical_device: vk::PhysicalDevice,
     common: &mut CommonData,
 ) -> Result<Device> {
-    let indices = QueueFamilyIndices::get(instance, surface, physical_device)?;
+    let indices = QueueFamilyIndices::get(instance, common, common.physical_device)?;
 
     let mut unique_indices = HashSet::new();
 

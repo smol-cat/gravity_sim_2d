@@ -18,16 +18,19 @@ fn main() -> Result<()> {
     pretty_env_logger::init();
 
     let event_loop = EventLoop::new();
-    let mut destroying = false;
     let window = WindowBuilder::new()
+        .with_title("gravity simulator")
         .with_inner_size(LogicalSize::new(1024, 768))
         .build(&event_loop)?;
 
     let mut app = unsafe { App::create(&window)? };
+    let mut destroying = false;
+    let mut minimized = false;
     event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Poll;
         match event {
             Event::MainEventsCleared if !destroying => unsafe {
-                app.render().unwrap();
+                app.render(&window).unwrap();
             },
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -40,7 +43,18 @@ fn main() -> Result<()> {
                     app.destroy();
                 }
             }
+            Event::WindowEvent {
+                event: WindowEvent::Resized(size),
+                ..
+            } => {
+                if size.width == 0 || size.height == 0 {
+                    minimized = true;
+                } else {
+                    minimized = false;
+                    app.resized = true;
+                }
+            }
             _ => {}
-        };
+        }
     });
 }

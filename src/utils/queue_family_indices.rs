@@ -1,7 +1,10 @@
 use anyhow::{anyhow, Result};
+use log::info;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk;
 use vulkanalia::vk::{InstanceV1_0, KhrSurfaceExtension};
+
+use crate::data::common_data::CommonData;
 
 #[derive(Copy, Clone, Debug)]
 pub struct QueueFamilyIndices {
@@ -12,7 +15,7 @@ pub struct QueueFamilyIndices {
 impl QueueFamilyIndices {
     pub unsafe fn get(
         instance: &Instance,
-        surface: vk::SurfaceKHR,
+        common: &CommonData,
         physical_device: vk::PhysicalDevice,
     ) -> Result<Self> {
         let properties = instance.get_physical_device_queue_family_properties(physical_device);
@@ -27,7 +30,7 @@ impl QueueFamilyIndices {
             if instance.get_physical_device_surface_support_khr(
                 physical_device,
                 index as u32,
-                surface,
+                common.surface,
             )? {
                 present = Some(index as u32);
                 break;

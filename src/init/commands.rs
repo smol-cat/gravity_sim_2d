@@ -29,7 +29,7 @@ pub unsafe fn create_command_pool(
     device: &Device,
     common: &CommonData,
 ) -> Result<vk::CommandPool> {
-    let indices = QueueFamilyIndices::get(instance, common.surface, common.physical_device)?;
+    let indices = QueueFamilyIndices::get(instance, common, common.physical_device)?;
     let info = vk::CommandPoolCreateInfo::builder()
         .flags(
             vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER

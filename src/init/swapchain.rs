@@ -15,7 +15,7 @@ pub unsafe fn create_swapchain(
     window: &Window,
     swapchain: &mut SwapchainData,
 ) -> Result<()> {
-    let indices = QueueFamilyIndices::get(instance, common.surface, common.physical_device)?;
+    let indices = QueueFamilyIndices::get(instance, common, common.physical_device)?;
     let support = SwapchainSupport::get(instance, common.surface, common.physical_device)?;
 
     let swapchain_format = get_swapchain_surface_format(&support.formats);

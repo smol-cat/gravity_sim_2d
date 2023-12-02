@@ -1,7 +1,7 @@
 pub mod buffers;
 pub mod commands;
 pub mod descriptors;
-pub mod devices;
+pub mod device;
 pub mod framebuffers;
 pub mod instance;
 pub mod pipeline;
