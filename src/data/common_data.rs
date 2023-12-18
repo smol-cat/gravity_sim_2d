@@ -4,7 +4,9 @@ use vulkanalia::vk;
 pub struct CommonData {
     pub messenger: vk::DebugUtilsMessengerEXT,
     pub physical_device: vk::PhysicalDevice,
-    pub graphics_queue: vk::Queue,
     pub surface: vk::SurfaceKHR,
+
+    pub graphics_queue: vk::Queue,
     pub present_queue: vk::Queue,
+    pub compute_queue: vk::Queue,
 }

@@ -1,30 +1,31 @@
 use anyhow::{anyhow, Ok, Result};
 use log::info;
 
-use cgmath::{point3, vec3, Deg};
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
 use std::time::Instant;
-use thiserror::Error;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
-use vulkanalia::vk::ExtDebugUtilsExtension;
 use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
+use vulkanalia::vk::{ExtDebugUtilsExtension, Fence};
 
 use crate::data::buffers_data::BuffersData;
 use crate::data::commands_data::CommandsData;
+use crate::data::descriptors_data::DescriptorsData;
 use crate::data::globals;
 use crate::data::pipeline_data::PipelineData;
 use crate::data::swapchain_data::SwapchainData;
 use crate::data::sync_data::SyncData;
+use crate::data::uniform_buffer_object::UniformBufferObject;
 use crate::data::vertex::Vertex;
 use crate::generators::random_generator;
-use crate::init::{buffers, commands, framebuffers, pipeline, render_pass, swapchain, sync};
-use crate::utils::queue_family_indices;
+use crate::init::{
+    buffers, commands, descriptors, framebuffers, pipeline, render_pass, swapchain, sync,
+};
 use crate::{
     data::common_data::CommonData,
     init::{device, instance},
@@ -36,14 +37,16 @@ pub struct App {
     pub device: Device,
     frame: usize,
     pub resized: bool,
+    prev_duration: f32,
     start: Instant,
 
-    entry: Entry,
+    _entry: Entry,
     buffers: BuffersData,
     common: CommonData,
     commands: CommandsData,
     pipeline: PipelineData,
     swapchain: SwapchainData,
+    descriptors: DescriptorsData,
     sync: SyncData,
 
     vertices: Vec<Vertex>,
@@ -60,6 +63,7 @@ impl App {
         let mut pipeline = PipelineData::default();
         let mut swapchain = SwapchainData::default();
         let mut sync = SyncData::default();
+        let mut descriptors = DescriptorsData::default();
 
         let instance = instance::create_instance(window, &entry, &mut common)?;
         common.surface = vk_window::create_surface(&instance, &window, &window)?;
@@ -72,26 +76,51 @@ impl App {
             swapchain::create_swapchain_image_views(&device, &swapchain)?;
 
         pipeline.render_pass = render_pass::create_render_pass(&device, &swapchain)?;
+        descriptors.descriptor_set_layout = descriptors::create_descriptor_set_layout(&device)?;
+
         pipeline::create_pipeline(&device, &swapchain, &mut pipeline)?;
+        descriptors.descriptor_pool = descriptors::create_descriptor_pool(&device, &swapchain)?;
+        pipeline::create_compute_pipeline(&device, &descriptors, &mut pipeline)?;
 
         commands::create_command_pools(&instance, &device, &common, &swapchain, &mut commands)?;
         swapchain.framebuffers =
             framebuffers::create_framebuffers(&device, pipeline.render_pass, &swapchain)?;
 
-        let vertices = random_generator::generate_vertices(1000);
-        (buffers.vertex_buffer, buffers.vertex_buffer_memory) =
-            buffers::create_vertex_buffer(&instance, &device, &vertices, &common, &commands)?;
+        let vertices = random_generator::generate_vertices(1000000);
+        buffers::create_uniform_buffers(&instance, &device, &common, &swapchain, &mut buffers)?;
+
+        buffers::create_shader_storage_buffers(
+            &instance,
+            &device,
+            &vertices,
+            &common,
+            &commands,
+            &mut buffers,
+        )?;
+
+        descriptors::create_descriptor_sets(
+            &device,
+            &buffers,
+            &vertices,
+            descriptors.descriptor_set_layout,
+            &mut descriptors,
+        )?;
 
         commands.command_buffers =
             commands::create_command_buffers(&device, &swapchain, commands.main_command_pool)?;
 
+        commands.compute_commands_buffers =
+            commands::create_command_buffers(&device, &swapchain, commands.main_command_pool)?;
+
         sync::create_sync_objects(&device, &swapchain, &mut sync)?;
         let _self = Self {
-            entry,
+            descriptors,
+            _entry: entry,
             instance,
             device,
             frame: 0,
             resized: false,
+            prev_duration: 0.0,
             start: Instant::now(),
             buffers,
             common,
@@ -122,7 +151,7 @@ impl App {
 
         let image_index = match result {
             Result::Ok((image_index, _)) => image_index as usize,
-            //Err(vk::ErrorCode::OUT_OF_DATE_KHR) => return self.recreate_swapchain(window),
+            Err(vk::ErrorCode::OUT_OF_DATE_KHR) => return self.recreate_swapchain(window),
             Err(e) => return Err(anyhow!(e)),
         };
 
@@ -136,20 +165,39 @@ impl App {
 
         self.sync.images_in_flight[image_index as usize] = self.sync.in_flight_fences[self.frame];
         self.update_command_buffer(image_index)?;
+        self.update_uniform_buffer(image_index)?;
+        self.update_compute_command_buffers(image_index)?;
+
+        self.device
+            .reset_fences(&[self.sync.in_flight_fences[self.frame]])?;
 
         let wait_semaphores = &[self.sync.image_available_semaphores[self.frame]];
+        let wait_stages = &[vk::PipelineStageFlags::COMPUTE_SHADER];
+        let command_buffers = &[self.commands.compute_commands_buffers[image_index as usize]];
+        let signal_semaphores = &[self.sync.compute_finished_semaphores[self.frame]];
+
+        let compute_submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(wait_semaphores)
+            .wait_dst_stage_mask(wait_stages)
+            .command_buffers(command_buffers)
+            .signal_semaphores(signal_semaphores);
+
+        self.device.queue_submit(
+            self.common.compute_queue,
+            &[compute_submit_info],
+            Fence::null(),
+        )?;
+
+        let command_buffers = &[self.commands.command_buffers[image_index as usize].clone()];
+        let wait_semaphores = &[self.sync.compute_finished_semaphores[self.frame].clone()];
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let command_buffers = &[self.commands.command_buffers[image_index as usize]];
-        let signal_semaphores = &[self.sync.render_finished_semaphores[self.frame]];
+        let signal_semaphores = &[self.sync.render_finished_semaphores[self.frame].clone()];
 
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(wait_semaphores)
             .wait_dst_stage_mask(wait_stages)
             .command_buffers(command_buffers)
             .signal_semaphores(signal_semaphores);
-
-        self.device
-            .reset_fences(&[self.sync.in_flight_fences[self.frame]])?;
 
         self.device.queue_submit(
             self.common.graphics_queue,
@@ -199,6 +247,16 @@ impl App {
         self.pipeline.render_pass = render_pass::create_render_pass(&self.device, &self.swapchain)?;
 
         pipeline::create_pipeline(&self.device, &self.swapchain, &mut self.pipeline)?;
+        self.descriptors.descriptor_pool =
+            descriptors::create_descriptor_pool(&self.device, &self.swapchain)?;
+
+        descriptors::create_descriptor_sets(
+            &self.device,
+            &self.buffers,
+            &self.vertices,
+            self.descriptors.descriptor_set_layout,
+            &mut self.descriptors,
+        )?;
 
         self.swapchain.framebuffers = framebuffers::create_framebuffers(
             &self.device,
@@ -226,11 +284,8 @@ impl App {
 
         let command_buffer = self.commands.command_buffers[image_index];
 
-        let inheritance = vk::CommandBufferInheritanceInfo::builder();
         let info = vk::CommandBufferBeginInfo::builder()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
-            .inheritance_info(&inheritance);
-
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
         self.device.begin_command_buffer(command_buffer, &info)?;
 
         let render_area = vk::Rect2D::builder()
@@ -259,8 +314,12 @@ impl App {
             self.pipeline.pipeline,
         );
 
-        self.device
-            .cmd_bind_vertex_buffers(command_buffer, 0, &[self.buffers.vertex_buffer], &[0]);
+        self.device.cmd_bind_vertex_buffers(
+            command_buffer,
+            0,
+            &[self.buffers.storage_buffers[self.frame]],
+            &[0],
+        );
 
         self.device
             .cmd_draw(command_buffer, self.vertices.len() as u32, 1, 0, 0);
@@ -271,14 +330,80 @@ impl App {
         Ok(())
     }
 
+    unsafe fn update_uniform_buffer(&mut self, image_index: usize) -> Result<()> {
+        let curr_duration = self.start.elapsed().as_secs_f32();
+        let delta = curr_duration - self.prev_duration;
+        self.prev_duration = curr_duration;
+
+        let ubo = UniformBufferObject { delta_t: delta };
+        let memory = self.device.map_memory(
+            self.buffers.uniform_buffers_memory[image_index],
+            0,
+            size_of::<UniformBufferObject>() as u64,
+            vk::MemoryMapFlags::empty(),
+        )?;
+
+        memcpy(&ubo, memory.cast(), 1);
+
+        self.device
+            .unmap_memory(self.buffers.uniform_buffers_memory[image_index]);
+        Ok(())
+    }
+
+    unsafe fn update_compute_command_buffers(&mut self, image_index: usize) -> Result<()> {
+        let command_pool = self.commands.command_pools[image_index];
+
+        self.device
+            .reset_command_pool(command_pool, vk::CommandPoolResetFlags::empty())?;
+
+        let command_buffer = self.commands.compute_commands_buffers[image_index];
+
+        let inheritance = vk::CommandBufferInheritanceInfo::builder();
+        let info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+            .inheritance_info(&inheritance);
+
+        self.device.begin_command_buffer(command_buffer, &info)?;
+
+        self.device.cmd_bind_pipeline(
+            command_buffer,
+            vk::PipelineBindPoint::COMPUTE,
+            self.pipeline.compute_pipeline,
+        );
+
+        let descriptor_sets = &[self.descriptors.descriptor_sets[self.frame]];
+        self.device.cmd_bind_descriptor_sets(
+            command_buffer,
+            vk::PipelineBindPoint::COMPUTE,
+            self.pipeline.compute_pipeline_layout,
+            0,
+            descriptor_sets,
+            &[],
+        );
+
+        self.device
+            .cmd_dispatch(command_buffer, (self.vertices.len() / 256) as u32, 1, 1);
+
+        self.device.end_command_buffer(command_buffer)?;
+        Ok(())
+    }
+
     pub unsafe fn destroy(&self) {
         self.device.device_wait_idle().unwrap();
 
+        self.device
+            .destroy_descriptor_set_layout(self.descriptors.descriptor_set_layout, None);
         self.destroy_swapchain();
+
         self.commands
             .command_pools
             .iter()
             .for_each(|cp| self.device.destroy_command_pool(*cp, None));
+
+        self.device
+            .destroy_pipeline(self.pipeline.compute_pipeline, None);
+        self.device
+            .destroy_pipeline_layout(self.pipeline.compute_pipeline_layout, None);
 
         self.sync
             .in_flight_fences
@@ -292,10 +417,28 @@ impl App {
             .image_available_semaphores
             .iter()
             .for_each(|s| self.device.destroy_semaphore(*s, None));
+        self.sync
+            .compute_finished_semaphores
+            .iter()
+            .for_each(|s| self.device.destroy_semaphore(*s, None));
 
-        self.device.destroy_buffer(self.buffers.vertex_buffer, None);
-        self.device
-            .free_memory(self.buffers.vertex_buffer_memory, None);
+        self.buffers
+            .uniform_buffers
+            .iter()
+            .for_each(|s| self.device.destroy_buffer(*s, None));
+        self.buffers
+            .uniform_buffers_memory
+            .iter()
+            .for_each(|s| self.device.free_memory(*s, None));
+
+        self.buffers
+            .storage_buffers
+            .iter()
+            .for_each(|s| self.device.destroy_buffer(*s, None));
+        self.buffers
+            .storage_buffer_memories
+            .iter()
+            .for_each(|s| self.device.free_memory(*s, None));
 
         self.device
             .destroy_command_pool(self.commands.main_command_pool, None);
@@ -312,6 +455,9 @@ impl App {
     }
 
     pub unsafe fn destroy_swapchain(&self) {
+        self.device
+            .destroy_descriptor_pool(self.descriptors.descriptor_pool, None);
+
         self.swapchain
             .framebuffers
             .iter()

@@ -1,0 +1,26 @@
+#version 450
+
+struct Particle {
+	vec2 pos;
+	vec2 vel;
+};
+
+layout(std140, binding = 0) readonly buffer Pos {
+   Particle particles[ ];
+};
+
+layout(std140, binding = 1) buffer Pos1 {
+   Particle particles1[ ];
+};
+
+layout (binding = 2) uniform UBO {
+	float deltaT;
+} ubo;
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;  
+    particles1[index].pos = particles[index].pos + particles[index].vel.xy * ubo.deltaT;
+    particles1[index].vel = particles[index].vel;
+}

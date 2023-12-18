@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use log::info;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk;
 use vulkanalia::vk::{InstanceV1_0, KhrSurfaceExtension};
@@ -8,7 +7,7 @@ use crate::data::common_data::CommonData;
 
 #[derive(Copy, Clone, Debug)]
 pub struct QueueFamilyIndices {
-    pub graphics: u32,
+    pub graphics_compute: u32,
     pub present: u32,
 }
 
@@ -22,7 +21,10 @@ impl QueueFamilyIndices {
 
         let graphics: Option<u32> = properties
             .iter()
-            .position(|p| p.queue_flags.contains(vk::QueueFlags::GRAPHICS))
+            .position(|p| {
+                p.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                    || p.queue_flags.contains(vk::QueueFlags::COMPUTE)
+            })
             .map(|i| i as u32);
 
         let mut present = None;
@@ -38,7 +40,10 @@ impl QueueFamilyIndices {
         }
 
         if let (Some(graphics), Some(present)) = (graphics, present) {
-            Ok(Self { graphics, present })
+            Ok(Self {
+                graphics_compute: graphics,
+                present,
+            })
         } else {
             Err(anyhow!("Missing required queue families."))
         }

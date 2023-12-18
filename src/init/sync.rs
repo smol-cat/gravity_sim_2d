@@ -1,7 +1,7 @@
 use anyhow::{Ok, Result};
 use vulkanalia::prelude::v1_0::*;
 
-use crate::data::{swapchain_data::SwapchainData, sync_data::SyncData, globals};
+use crate::data::{globals, swapchain_data::SwapchainData, sync_data::SyncData};
 
 pub unsafe fn create_sync_objects(
     device: &Device,
@@ -16,6 +16,8 @@ pub unsafe fn create_sync_objects(
             .push(device.create_semaphore(&semaphore_info, None)?);
         sync.render_finished_semaphores
             .push(device.create_semaphore(&semaphore_info, None)?);
+        sync.compute_finished_semaphores
+            .push(device.create_semaphore(&semaphore_info, None)?);
 
         sync.in_flight_fences
             .push(device.create_fence(&fence_info, None)?);
@@ -27,5 +29,6 @@ pub unsafe fn create_sync_objects(
         .map(|_| vk::Fence::null())
         .collect();
 
+    dbg!(sync);
     Ok(())
 }

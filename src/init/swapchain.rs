@@ -1,4 +1,5 @@
 use anyhow::{Ok, Result};
+use log::info;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::KhrSwapchainExtension;
 use winit::window::Window;
@@ -23,6 +24,7 @@ pub unsafe fn create_swapchain(
     let swaphchain_extent = get_swapchain_extent(window, support.capabilities);
 
     let mut image_count = support.capabilities.min_image_count + 1;
+    info!("Swapchain images count: {}", image_count);
 
     if support.capabilities.max_image_count != 0
         && image_count > support.capabilities.max_image_count
@@ -31,8 +33,8 @@ pub unsafe fn create_swapchain(
     }
 
     let mut queue_family_indices = vec![];
-    let image_sharing_mode = if indices.graphics != indices.present {
-        queue_family_indices.push(indices.graphics);
+    let image_sharing_mode = if indices.graphics_compute != indices.present {
+        queue_family_indices.push(indices.graphics_compute);
         queue_family_indices.push(indices.present);
         vk::SharingMode::CONCURRENT
     } else {

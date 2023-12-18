@@ -35,7 +35,7 @@ pub unsafe fn create_command_pool(
             vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER
                 | vk::CommandPoolCreateFlags::TRANSIENT,
         )
-        .queue_family_index(indices.graphics);
+        .queue_family_index(indices.graphics_compute);
 
     Ok(device.create_command_pool(&info, None)?)
 }

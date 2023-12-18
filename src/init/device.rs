@@ -5,7 +5,7 @@ use log::{info, warn};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk;
 
-use crate::data::common_data::{self, CommonData};
+use crate::data::common_data::CommonData;
 use crate::data::globals;
 use crate::utils::queue_family_indices::QueueFamilyIndices;
 
@@ -66,7 +66,7 @@ pub unsafe fn create_logical_device(
 
     let mut unique_indices = HashSet::new();
 
-    unique_indices.insert(indices.graphics);
+    unique_indices.insert(indices.graphics_compute);
     unique_indices.insert(indices.present);
 
     let queue_priorities = &[1.0];
@@ -101,7 +101,8 @@ pub unsafe fn create_logical_device(
     let device = instance.create_device(common.physical_device, &info, None)?;
 
     common.present_queue = device.get_device_queue(indices.present, 0);
-    common.graphics_queue = device.get_device_queue(indices.graphics, 0);
+    common.graphics_queue = device.get_device_queue(indices.graphics_compute, 0);
+    common.compute_queue = device.get_device_queue(indices.graphics_compute, 0);
 
     Ok(device)
 }

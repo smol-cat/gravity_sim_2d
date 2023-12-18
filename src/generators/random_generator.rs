@@ -8,7 +8,7 @@ pub fn generate_vertices(count: u32) -> Vec<Vertex> {
     for _ in 0..count {
         vertices.push(Vertex::new(
             vec2(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
-            vec2(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
+            vec2(rng.gen_range(-0.1..0.1), rng.gen_range(-0.1..0.1)),
         ));
     }
 

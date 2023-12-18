@@ -1,7 +1,10 @@
 use anyhow::{anyhow, Ok, Result};
 use vulkanalia::prelude::v1_0::*;
 
-use crate::data::{pipeline_data::PipelineData, swapchain_data::SwapchainData, vertex::Vertex};
+use crate::data::{
+    descriptors_data::DescriptorsData, pipeline_data::PipelineData, swapchain_data::SwapchainData,
+    vertex::Vertex,
+};
 
 pub unsafe fn create_pipeline(
     device: &Device,
@@ -61,7 +64,13 @@ pub unsafe fn create_pipeline(
 
     let attachment = vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
-        .blend_enable(false);
+        .blend_enable(true)
+        .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+        .color_blend_op(vk::BlendOp::ADD)
+        .src_alpha_blend_factor(vk::BlendFactor::ONE)
+        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+        .alpha_blend_op(vk::BlendOp::ADD);
 
     let attachments = &[attachment];
     let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
@@ -97,6 +106,37 @@ pub unsafe fn create_pipeline(
     device.destroy_shader_module(vert_shader_module, None);
     device.destroy_shader_module(frag_shader_module, None);
 
+    Ok(())
+}
+
+pub unsafe fn create_compute_pipeline(
+    device: &Device,
+    descriptors: &DescriptorsData,
+    pipeline: &mut PipelineData,
+) -> Result<()> {
+    let comp = include_bytes!("../../shaders/comp.spv");
+    let comp_shader_module = create_shader_module(device, &comp[..])?;
+    let comp_stage = vk::PipelineShaderStageCreateInfo::builder()
+        .stage(vk::ShaderStageFlags::COMPUTE)
+        .module(comp_shader_module)
+        .name(b"main\0");
+
+    let set_layouts = &[descriptors.descriptor_set_layout];
+    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(set_layouts);
+
+    pipeline.compute_pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
+
+    let info = vk::ComputePipelineCreateInfo::builder()
+        .stage(comp_stage)
+        .layout(pipeline.compute_pipeline_layout);
+
+    let infos = &[info];
+
+    pipeline.compute_pipeline = device
+        .create_compute_pipelines(vk::PipelineCache::null(), infos, None)?
+        .0[0];
+
+    device.destroy_shader_module(comp_shader_module, None);
     Ok(())
 }
 
