@@ -16,7 +16,12 @@ pub unsafe fn create_sync_objects(
             .push(device.create_semaphore(&semaphore_info, None)?);
         sync.render_finished_semaphores
             .push(device.create_semaphore(&semaphore_info, None)?);
-        sync.compute_finished_semaphores
+        sync.gravity_compute_finished_semaphores
+            .push(device.create_semaphore(&semaphore_info, None)?);
+        sync.mass_compute_finished_semaphores
+            .push(device.create_semaphore(&semaphore_info, None)?);
+
+        sync.offscreen_finished_semaphores
             .push(device.create_semaphore(&semaphore_info, None)?);
 
         sync.in_flight_fences
@@ -29,6 +34,5 @@ pub unsafe fn create_sync_objects(
         .map(|_| vk::Fence::null())
         .collect();
 
-    dbg!(sync);
     Ok(())
 }

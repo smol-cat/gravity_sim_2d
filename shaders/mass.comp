@@ -1,0 +1,26 @@
+#version 450
+
+struct Particle {
+	vec2 pos;
+	vec2 vel;
+};
+
+layout(std140, binding = 0) readonly buffer Pos {
+   Particle particles[ ];
+};
+
+layout(set = 0, binding = 1, r32f) uniform image2D massImage;
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;  
+    vec2 pos = particles[index].pos;
+    vec2 posNormalized = vec2((pos.x + 1) * 0.5, (pos.y + 1) * 0.5);
+
+    ivec2 dims = imageSize(massImage);
+    ivec2 imagePos = ivec2(posNormalized.x * dims.x, posNormalized.y * dims.y);
+    
+    float currMass = imageLoad(massImage, imagePos).x;
+    imageStore(massImage, imagePos, vec4(currMass + 0.01, 0, 0, 0));
+}

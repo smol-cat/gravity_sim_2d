@@ -95,7 +95,7 @@ pub unsafe fn create_pipeline(
         .rasterization_state(&rasterization_state)
         .multisample_state(&multisample_state)
         .color_blend_state(&color_blend_state)
-        .layout(pipeline.pipeline_layout)
+        .layout(pipeline.mass_compute_pipeline_layout)
         .render_pass(pipeline.render_pass)
         .subpass(0);
 
@@ -109,7 +109,7 @@ pub unsafe fn create_pipeline(
     Ok(())
 }
 
-pub unsafe fn create_compute_pipeline(
+pub unsafe fn create_gravity_compute_pipeline(
     device: &Device,
     descriptors: &DescriptorsData,
     pipeline: &mut PipelineData,
@@ -124,15 +124,49 @@ pub unsafe fn create_compute_pipeline(
     let set_layouts = &[descriptors.descriptor_set_layout];
     let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(set_layouts);
 
-    pipeline.compute_pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
+    pipeline.gravity_compute_pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
 
     let info = vk::ComputePipelineCreateInfo::builder()
         .stage(comp_stage)
-        .layout(pipeline.compute_pipeline_layout);
+        .layout(pipeline.gravity_compute_pipeline_layout);
 
     let infos = &[info];
 
-    pipeline.compute_pipeline = device
+    pipeline.gravity_compute_pipeline = device
+        .create_compute_pipelines(vk::PipelineCache::null(), infos, None)?
+        .0[0];
+
+    device.destroy_shader_module(comp_shader_module, None);
+    Ok(())
+}
+
+pub unsafe fn create_mass_compute_pipeline(
+    device: &Device,
+    swapchain: &SwapchainData,
+    descriptors: &DescriptorsData,
+    pipeline: &mut PipelineData,
+) -> Result<()> {
+    let comp = include_bytes!("../../shaders/mass.comp.spv");
+
+    let comp_shader_module = create_shader_module(device, &comp[..])?;
+
+    let comp_stage = vk::PipelineShaderStageCreateInfo::builder()
+        .stage(vk::ShaderStageFlags::COMPUTE)
+        .module(comp_shader_module)
+        .name(b"main\0");
+
+    let set_layouts = &[descriptors.descriptor_set_layout];
+    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(set_layouts);
+
+    pipeline.mass_compute_pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
+
+    let info = vk::ComputePipelineCreateInfo::builder()
+        .stage(comp_stage)
+        .layout(pipeline.gravity_compute_pipeline_layout);
+
+    let infos = &[info];
+
+    pipeline.gravity_compute_pipeline = device
         .create_compute_pipelines(vk::PipelineCache::null(), infos, None)?
         .0[0];
 

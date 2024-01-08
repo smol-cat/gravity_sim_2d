@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Ok, Result};
-use log::info;
 
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
@@ -26,6 +25,7 @@ use crate::generators::random_generator;
 use crate::init::{
     buffers, commands, descriptors, framebuffers, pipeline, render_pass, swapchain, sync,
 };
+use crate::utils::resources;
 use crate::{
     data::common_data::CommonData,
     init::{device, instance},
@@ -46,7 +46,8 @@ pub struct App {
     commands: CommandsData,
     pipeline: PipelineData,
     swapchain: SwapchainData,
-    descriptors: DescriptorsData,
+    gravity_descriptors: DescriptorsData,
+    mass_descriptors: DescriptorsData,
     sync: SyncData,
 
     vertices: Vec<Vertex>,
@@ -63,7 +64,8 @@ impl App {
         let mut pipeline = PipelineData::default();
         let mut swapchain = SwapchainData::default();
         let mut sync = SyncData::default();
-        let mut descriptors = DescriptorsData::default();
+        let mut gravity_descriptors = DescriptorsData::default();
+        let mut mass_descriptors = DescriptorsData::default();
 
         let instance = instance::create_instance(window, &entry, &mut common)?;
         common.surface = vk_window::create_surface(&instance, &window, &window)?;
@@ -75,16 +77,59 @@ impl App {
         swapchain.swapchain_image_views =
             swapchain::create_swapchain_image_views(&device, &swapchain)?;
 
-        pipeline.render_pass = render_pass::create_render_pass(&device, &swapchain)?;
-        descriptors.descriptor_set_layout = descriptors::create_descriptor_set_layout(&device)?;
+        (buffers.offscreen_images, buffers.offscreen_image_memories) =
+            buffers::create_offscreen_images(&instance, &device, &common, &swapchain)?;
 
+        buffers.offscreen_image_views = resources::create_image_views(
+            &device,
+            &buffers.offscreen_images,
+            vk::Format::R32_SFLOAT,
+            vk::ImageAspectFlags::COLOR,
+            1,
+        )?;
+
+        // Render passes
+        pipeline.render_pass =
+            render_pass::create_render_pass(&device, swapchain.swapchain_format)?;
+        pipeline.mass_render_pass =
+            render_pass::create_render_pass(&device, vk::Format::R32_SFLOAT)?;
+
+        // Descriptor layouts
+        gravity_descriptors.descriptor_set_layout =
+            descriptors::create_gravity_descriptor_set_layout(&device)?;
+        mass_descriptors.descriptor_set_layout =
+            descriptors::create_mass_descriptor_set_layout(&device)?;
+
+        // Pipelines
+        pipeline::create_mass_compute_pipeline(
+            &device,
+            &swapchain,
+            &mass_descriptors,
+            &mut pipeline,
+        )?;
+        pipeline::create_gravity_compute_pipeline(&device, &gravity_descriptors, &mut pipeline)?;
         pipeline::create_pipeline(&device, &swapchain, &mut pipeline)?;
-        descriptors.descriptor_pool = descriptors::create_descriptor_pool(&device, &swapchain)?;
-        pipeline::create_compute_pipeline(&device, &descriptors, &mut pipeline)?;
+
+        gravity_descriptors.descriptor_pool =
+            descriptors::create_gravity_descriptor_pool(&device, &swapchain)?;
+        mass_descriptors.descriptor_pool =
+            descriptors::create_mass_descriptor_pool(&device, &swapchain)?;
 
         commands::create_command_pools(&instance, &device, &common, &swapchain, &mut commands)?;
-        swapchain.framebuffers =
-            framebuffers::create_framebuffers(&device, pipeline.render_pass, &swapchain)?;
+
+        buffers.mass_framebuffers = framebuffers::create_framebuffers(
+            &device,
+            pipeline.mass_render_pass,
+            &swapchain.swapchain_extent,
+            &buffers.offscreen_image_views,
+        )?;
+
+        buffers.present_framebuffers = framebuffers::create_framebuffers(
+            &device,
+            pipeline.render_pass,
+            &swapchain.swapchain_extent,
+            &swapchain.swapchain_image_views,
+        )?;
 
         let vertices = random_generator::generate_vertices(1000000);
         buffers::create_uniform_buffers(&instance, &device, &common, &swapchain, &mut buffers)?;
@@ -98,23 +143,35 @@ impl App {
             &mut buffers,
         )?;
 
-        descriptors::create_descriptor_sets(
+        descriptors::create_gravity_descriptor_sets(
             &device,
             &buffers,
             &vertices,
-            descriptors.descriptor_set_layout,
-            &mut descriptors,
+            gravity_descriptors.descriptor_set_layout,
+            &mut gravity_descriptors,
+        )?;
+
+        descriptors::create_mass_descriptor_sets(
+            &device,
+            &buffers,
+            &vertices,
+            mass_descriptors.descriptor_set_layout,
+            &mut mass_descriptors,
         )?;
 
         commands.command_buffers =
             commands::create_command_buffers(&device, &swapchain, commands.main_command_pool)?;
 
-        commands.compute_commands_buffers =
+        commands.gravity_compute_command_buffers =
+            commands::create_command_buffers(&device, &swapchain, commands.main_command_pool)?;
+
+        commands.mass_compute_command_buffers =
             commands::create_command_buffers(&device, &swapchain, commands.main_command_pool)?;
 
         sync::create_sync_objects(&device, &swapchain, &mut sync)?;
         let _self = Self {
-            descriptors,
+            gravity_descriptors,
+            mass_descriptors,
             _entry: entry,
             instance,
             device,
@@ -164,34 +221,20 @@ impl App {
         }
 
         self.sync.images_in_flight[image_index as usize] = self.sync.in_flight_fences[self.frame];
+
+        self.update_mass_command_buffers(image_index)?;
         self.update_command_buffer(image_index)?;
         self.update_uniform_buffer(image_index)?;
-        self.update_compute_command_buffers(image_index)?;
+        self.update_gravity_compute_command_buffers(image_index)?;
 
         self.device
             .reset_fences(&[self.sync.in_flight_fences[self.frame]])?;
 
+        // Mass Compute
+        let command_buffers = &[self.commands.mass_compute_command_buffers[image_index as usize]];
         let wait_semaphores = &[self.sync.image_available_semaphores[self.frame]];
         let wait_stages = &[vk::PipelineStageFlags::COMPUTE_SHADER];
-        let command_buffers = &[self.commands.compute_commands_buffers[image_index as usize]];
-        let signal_semaphores = &[self.sync.compute_finished_semaphores[self.frame]];
-
-        let compute_submit_info = vk::SubmitInfo::builder()
-            .wait_semaphores(wait_semaphores)
-            .wait_dst_stage_mask(wait_stages)
-            .command_buffers(command_buffers)
-            .signal_semaphores(signal_semaphores);
-
-        self.device.queue_submit(
-            self.common.compute_queue,
-            &[compute_submit_info],
-            Fence::null(),
-        )?;
-
-        let command_buffers = &[self.commands.command_buffers[image_index as usize].clone()];
-        let wait_semaphores = &[self.sync.compute_finished_semaphores[self.frame].clone()];
-        let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let signal_semaphores = &[self.sync.render_finished_semaphores[self.frame].clone()];
+        let signal_semaphores = &[self.sync.mass_compute_finished_semaphores[self.frame]];
 
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(wait_semaphores)
@@ -205,10 +248,45 @@ impl App {
             self.sync.in_flight_fences[self.frame],
         )?;
 
+        // Gravity Compute
+        let wait_semaphores = &[self.sync.mass_compute_finished_semaphores[self.frame]]; // change tha
+        let wait_stages = &[vk::PipelineStageFlags::COMPUTE_SHADER];
+        let command_buffers =
+            &[self.commands.gravity_compute_command_buffers[image_index as usize]];
+        let signal_semaphores = &[self.sync.gravity_compute_finished_semaphores[self.frame]];
+
+        let compute_submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(wait_semaphores)
+            .wait_dst_stage_mask(wait_stages)
+            .command_buffers(command_buffers)
+            .signal_semaphores(signal_semaphores);
+
+        self.device.queue_submit(
+            self.common.compute_queue,
+            &[compute_submit_info],
+            Fence::null(),
+        )?;
+
+        // Render
         let swapchains = &[self.swapchain.swapchain];
         let image_indices = &[image_index as u32];
+        let command_buffers = &[self.commands.command_buffers[image_index as usize]];
+
+        let wait_semaphores = &[self.sync.gravity_compute_finished_semaphores[self.frame]];
+        let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+        let signal_semaphores = &[self.sync.render_finished_semaphores[self.frame]];
+
+        let submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(wait_semaphores)
+            .wait_dst_stage_mask(wait_stages)
+            .command_buffers(command_buffers)
+            .signal_semaphores(signal_semaphores);
+
+        self.device
+            .queue_submit(self.common.graphics_queue, &[submit_info], Fence::null())?;
+
         let present_info = vk::PresentInfoKHR::builder()
-            .wait_semaphores(signal_semaphores)
+            .wait_semaphores(wait_semaphores)
             .swapchains(swapchains)
             .image_indices(image_indices);
 
@@ -244,24 +322,61 @@ impl App {
 
         self.swapchain.swapchain_image_views =
             swapchain::create_swapchain_image_views(&self.device, &mut self.swapchain)?;
-        self.pipeline.render_pass = render_pass::create_render_pass(&self.device, &self.swapchain)?;
+
+        self.pipeline.render_pass =
+            render_pass::create_render_pass(&self.device, self.swapchain.swapchain_format)?;
+        self.pipeline.mass_render_pass =
+            render_pass::create_render_pass(&self.device, vk::Format::R32_SFLOAT)?;
+
+        (
+            self.buffers.offscreen_images,
+            self.buffers.offscreen_image_memories,
+        ) = buffers::create_offscreen_images(
+            &self.instance,
+            &self.device,
+            &self.common,
+            &self.swapchain,
+        )?;
+
+        self.buffers.offscreen_image_views = resources::create_image_views(
+            &self.device,
+            &self.buffers.offscreen_images,
+            vk::Format::R32_SFLOAT,
+            vk::ImageAspectFlags::COLOR,
+            1,
+        )?;
 
         pipeline::create_pipeline(&self.device, &self.swapchain, &mut self.pipeline)?;
-        self.descriptors.descriptor_pool =
-            descriptors::create_descriptor_pool(&self.device, &self.swapchain)?;
+        pipeline::create_mass_compute_pipeline(
+            &self.device,
+            &self.swapchain,
+            &self.gravity_descriptors,
+            &mut self.pipeline,
+        )?;
 
-        descriptors::create_descriptor_sets(
+        self.gravity_descriptors.descriptor_pool =
+            descriptors::create_gravity_descriptor_pool(&self.device, &self.swapchain)?;
+
+        descriptors::create_gravity_descriptor_sets(
             &self.device,
             &self.buffers,
             &self.vertices,
-            self.descriptors.descriptor_set_layout,
-            &mut self.descriptors,
+            self.gravity_descriptors.descriptor_set_layout,
+            &mut self.gravity_descriptors,
         )?;
 
-        self.swapchain.framebuffers = framebuffers::create_framebuffers(
+        self.buffers.present_framebuffers = framebuffers::create_framebuffers(
             &self.device,
             self.pipeline.render_pass,
-            &mut self.swapchain,
+            &self.swapchain.swapchain_extent,
+            &self.swapchain.swapchain_image_views,
+        )?;
+
+        self.buffers.mass_framebuffers = framebuffers::create_framebuffers(
+            &self.device,
+            self.pipeline.mass_render_pass,
+            &self.swapchain.swapchain_extent,
+            &self.buffers.offscreen_image_views,
         )?;
 
         self.commands.command_buffers = commands::create_command_buffers(
@@ -278,10 +393,6 @@ impl App {
     }
 
     unsafe fn update_command_buffer(&mut self, image_index: usize) -> Result<()> {
-        let command_pool = self.commands.command_pools[image_index];
-        self.device
-            .reset_command_pool(command_pool, vk::CommandPoolResetFlags::empty())?;
-
         let command_buffer = self.commands.command_buffers[image_index];
 
         let info = vk::CommandBufferBeginInfo::builder()
@@ -299,9 +410,10 @@ impl App {
         };
 
         let clear_values = &[color_clear_value];
+
         let info = vk::RenderPassBeginInfo::builder()
             .render_pass(self.pipeline.render_pass)
-            .framebuffer(self.swapchain.framebuffers[image_index])
+            .framebuffer(self.buffers.present_framebuffers[image_index])
             .render_area(render_area)
             .clear_values(clear_values);
 
@@ -350,13 +462,13 @@ impl App {
         Ok(())
     }
 
-    unsafe fn update_compute_command_buffers(&mut self, image_index: usize) -> Result<()> {
-        let command_pool = self.commands.command_pools[image_index];
+    unsafe fn update_mass_command_buffers(&self, image_index: usize) -> Result<()> {
+        todo!();
+        Ok(())
+    }
 
-        self.device
-            .reset_command_pool(command_pool, vk::CommandPoolResetFlags::empty())?;
-
-        let command_buffer = self.commands.compute_commands_buffers[image_index];
+    unsafe fn update_gravity_compute_command_buffers(&mut self, image_index: usize) -> Result<()> {
+        let command_buffer = self.commands.gravity_compute_command_buffers[image_index];
 
         let inheritance = vk::CommandBufferInheritanceInfo::builder();
         let info = vk::CommandBufferBeginInfo::builder()
@@ -368,14 +480,14 @@ impl App {
         self.device.cmd_bind_pipeline(
             command_buffer,
             vk::PipelineBindPoint::COMPUTE,
-            self.pipeline.compute_pipeline,
+            self.pipeline.gravity_compute_pipeline,
         );
 
-        let descriptor_sets = &[self.descriptors.descriptor_sets[self.frame]];
+        let descriptor_sets = &[self.gravity_descriptors.descriptor_sets[self.frame]];
         self.device.cmd_bind_descriptor_sets(
             command_buffer,
             vk::PipelineBindPoint::COMPUTE,
-            self.pipeline.compute_pipeline_layout,
+            self.pipeline.gravity_compute_pipeline_layout,
             0,
             descriptor_sets,
             &[],
@@ -392,7 +504,10 @@ impl App {
         self.device.device_wait_idle().unwrap();
 
         self.device
-            .destroy_descriptor_set_layout(self.descriptors.descriptor_set_layout, None);
+            .destroy_descriptor_set_layout(self.mass_descriptors.descriptor_set_layout, None);
+        self.device
+            .destroy_descriptor_set_layout(self.gravity_descriptors.descriptor_set_layout, None);
+
         self.destroy_swapchain();
 
         self.commands
@@ -401,9 +516,14 @@ impl App {
             .for_each(|cp| self.device.destroy_command_pool(*cp, None));
 
         self.device
-            .destroy_pipeline(self.pipeline.compute_pipeline, None);
+            .destroy_pipeline(self.pipeline.gravity_compute_pipeline, None);
         self.device
-            .destroy_pipeline_layout(self.pipeline.compute_pipeline_layout, None);
+            .destroy_pipeline(self.pipeline.mass_compute_pipeline, None);
+
+        self.device
+            .destroy_pipeline_layout(self.pipeline.gravity_compute_pipeline_layout, None);
+        self.device
+            .destroy_pipeline_layout(self.pipeline.mass_compute_pipeline_layout, None);
 
         self.sync
             .in_flight_fences
@@ -418,7 +538,7 @@ impl App {
             .iter()
             .for_each(|s| self.device.destroy_semaphore(*s, None));
         self.sync
-            .compute_finished_semaphores
+            .gravity_compute_finished_semaphores
             .iter()
             .for_each(|s| self.device.destroy_semaphore(*s, None));
 
@@ -456,10 +576,12 @@ impl App {
 
     pub unsafe fn destroy_swapchain(&self) {
         self.device
-            .destroy_descriptor_pool(self.descriptors.descriptor_pool, None);
+            .destroy_descriptor_pool(self.mass_descriptors.descriptor_pool, None);
+        self.device
+            .destroy_descriptor_pool(self.gravity_descriptors.descriptor_pool, None);
 
-        self.swapchain
-            .framebuffers
+        self.buffers
+            .present_framebuffers
             .iter()
             .for_each(|f| self.device.destroy_framebuffer(*f, None));
 

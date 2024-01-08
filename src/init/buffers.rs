@@ -96,3 +96,34 @@ pub unsafe fn create_uniform_buffers(
 
     Ok(())
 }
+
+pub unsafe fn create_offscreen_images(
+    instance: &Instance,
+    device: &Device,
+    common: &CommonData,
+    swapchain: &SwapchainData,
+) -> Result<(Vec<vk::Image>, Vec<vk::DeviceMemory>)> {
+    let mut images = vec![];
+    let mut image_memories = vec![];
+
+    for _ in 0..swapchain.swapchain_images.len() {
+        let (image, image_memory) = resources::create_image(
+            instance,
+            device,
+            common,
+            swapchain.swapchain_extent.width,
+            swapchain.swapchain_extent.height,
+            1,
+            vk::SampleCountFlags::_1,
+            vk::Format::R32_SFLOAT,
+            vk::ImageTiling::OPTIMAL,
+            vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )?;
+
+        images.push(image);
+        image_memories.push(image_memory);
+    }
+
+    Ok((images, image_memories))
+}

@@ -7,4 +7,11 @@ pub struct BuffersData {
 
     pub uniform_buffers: Vec<vk::Buffer>,
     pub uniform_buffers_memory: Vec<vk::DeviceMemory>,
+
+    pub present_framebuffers: Vec<vk::Framebuffer>,
+    pub mass_framebuffers: Vec<vk::Framebuffer>,
+
+    pub offscreen_images: Vec<vk::Image>,
+    pub offscreen_image_views: Vec<vk::ImageView>,
+    pub offscreen_image_memories: Vec<vk::DeviceMemory>,
 }

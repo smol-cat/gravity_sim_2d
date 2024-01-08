@@ -103,6 +103,7 @@ pub unsafe fn create_logical_device(
     common.present_queue = device.get_device_queue(indices.present, 0);
     common.graphics_queue = device.get_device_queue(indices.graphics_compute, 0);
     common.compute_queue = device.get_device_queue(indices.graphics_compute, 0);
+    common.offscreen_queue = device.get_device_queue(indices.graphics_compute, 0);
 
     Ok(device)
 }
