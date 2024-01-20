@@ -1,8 +1,9 @@
 use anyhow::Result;
+use log::info;
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
 
-use vulkanalia::prelude::v1_0::*;
+use vulkanalia::{prelude::v1_0::*, vk::ApplicationInfo};
 
 use crate::{
     data::{
@@ -101,10 +102,12 @@ pub unsafe fn create_offscreen_images(
     instance: &Instance,
     device: &Device,
     common: &CommonData,
+    commands: &CommandsData,
     swapchain: &SwapchainData,
 ) -> Result<(Vec<vk::Image>, Vec<vk::DeviceMemory>)> {
     let mut images = vec![];
     let mut image_memories = vec![];
+    let mip_levels = resources::get_mip_levels(swapchain);
 
     for _ in 0..swapchain.swapchain_images.len() {
         let (image, image_memory) = resources::create_image(
@@ -113,12 +116,35 @@ pub unsafe fn create_offscreen_images(
             common,
             swapchain.swapchain_extent.width,
             swapchain.swapchain_extent.height,
-            1,
+            mip_levels,
             vk::SampleCountFlags::_1,
             vk::Format::R32_SFLOAT,
             vk::ImageTiling::OPTIMAL,
-            vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+            vk::ImageUsageFlags::STORAGE
+                | vk::ImageUsageFlags::TRANSFER_SRC
+                | vk::ImageUsageFlags::TRANSFER_DST,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )?;
+
+        resources::transition_image_layout(
+            device,
+            common,
+            commands,
+            image,
+            vk::Format::R32_SFLOAT,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            mip_levels,
+        )?;
+
+        resources::generate_mip_maps(
+            device,
+            common,
+            commands,
+            image,
+            swapchain.swapchain_extent.width,
+            swapchain.swapchain_extent.height,
+            mip_levels,
         )?;
 
         images.push(image);

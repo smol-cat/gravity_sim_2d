@@ -142,12 +142,10 @@ pub unsafe fn create_gravity_compute_pipeline(
 
 pub unsafe fn create_mass_compute_pipeline(
     device: &Device,
-    swapchain: &SwapchainData,
     descriptors: &DescriptorsData,
     pipeline: &mut PipelineData,
 ) -> Result<()> {
     let comp = include_bytes!("../../shaders/mass.comp.spv");
-
     let comp_shader_module = create_shader_module(device, &comp[..])?;
 
     let comp_stage = vk::PipelineShaderStageCreateInfo::builder()
@@ -162,11 +160,11 @@ pub unsafe fn create_mass_compute_pipeline(
 
     let info = vk::ComputePipelineCreateInfo::builder()
         .stage(comp_stage)
-        .layout(pipeline.gravity_compute_pipeline_layout);
+        .layout(pipeline.mass_compute_pipeline_layout);
 
     let infos = &[info];
 
-    pipeline.gravity_compute_pipeline = device
+    pipeline.mass_compute_pipeline = device
         .create_compute_pipelines(vk::PipelineCache::null(), infos, None)?
         .0[0];
 

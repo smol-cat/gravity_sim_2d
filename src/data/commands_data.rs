@@ -8,4 +8,5 @@ pub struct CommandsData {
     pub command_buffers: Vec<vk::CommandBuffer>,
     pub gravity_compute_command_buffers: Vec<vk::CommandBuffer>,
     pub mass_compute_command_buffers: Vec<vk::CommandBuffer>,
+    pub image_clear_command_buffers: Vec<vk::CommandBuffer>,
 }

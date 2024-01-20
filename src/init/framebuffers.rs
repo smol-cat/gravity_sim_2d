@@ -7,10 +7,6 @@ pub unsafe fn create_framebuffers(
     extent: &vk::Extent2D,
     image_views: &Vec<vk::ImageView>,
 ) -> Result<Vec<vk::Framebuffer>> {
-    dbg!(render_pass);
-    dbg!(extent);
-    dbg!(&image_views);
-
     let framebuffers = image_views
         .iter()
         .map(|i| {

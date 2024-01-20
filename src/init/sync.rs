@@ -14,6 +14,7 @@ pub unsafe fn create_sync_objects(
     for _ in 0..globals::MAX_FRAMES_IN_FLIGHT {
         sync.image_available_semaphores
             .push(device.create_semaphore(&semaphore_info, None)?);
+
         sync.render_finished_semaphores
             .push(device.create_semaphore(&semaphore_info, None)?);
         sync.gravity_compute_finished_semaphores
