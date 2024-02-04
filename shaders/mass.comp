@@ -9,18 +9,24 @@ layout(std140, binding = 0) buffer Pos {
    Particle particles[ ];
 };
 
-layout(binding = 1, r32f) uniform image2D massImage;
+layout(binding = 1, r32f) uniform image2D massImage[12];
 
 layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
+layout(push_constant) uniform PushConstants {
+    layout(offset = 0) int mipLevels;
+} pcs;
+
 void main() {
     uint index = gl_GlobalInvocationID.x;  
-    vec2 pos = particles[index].pos;
-    vec2 posNormalized = vec2((pos.x + 1) * 0.5, (pos.y + 1) * 0.5);
+    for(int i = 0; i < pcs.mipLevels; i++) {
+        vec2 pos = particles[index].pos;
+        vec2 posNormalized = vec2((pos.x + 1) * 0.5, (pos.y + 1) * 0.5);
 
-    ivec2 dims = imageSize(massImage);
-    ivec2 imagePos = ivec2(posNormalized.x * dims.x, posNormalized.y * dims.y);
+        ivec2 dims = imageSize(massImage[i]);
+        ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x), floor(posNormalized.y * dims.y));
 
-    float currMass = imageLoad(massImage, imagePos).x;
-    imageStore(massImage, imagePos, vec4(currMass + 0.01, 1, 1, 1));
+        float currMass = imageLoad(massImage[i], imagePos).x;
+        imageStore(massImage[i], imagePos, vec4(currMass + 0.01, 1, 1, 1));
+    }
 }

@@ -11,6 +11,6 @@ pub struct BuffersData {
     pub present_framebuffers: Vec<vk::Framebuffer>,
 
     pub offscreen_images: Vec<vk::Image>,
-    pub offscreen_image_views: Vec<vk::ImageView>,
+    pub offscreen_image_views: Vec<Vec<vk::ImageView>>,
     pub offscreen_image_memories: Vec<vk::DeviceMemory>,
 }

@@ -25,7 +25,7 @@ use crate::generators::random_generator;
 use crate::init::{
     buffers, commands, descriptors, framebuffers, pipeline, render_pass, swapchain, sync,
 };
-use crate::utils::resources;
+use crate::utils::{self, resources};
 use crate::{
     data::common_data::CommonData,
     init::{device, instance},
@@ -82,12 +82,12 @@ impl App {
         (buffers.offscreen_images, buffers.offscreen_image_memories) =
             buffers::create_offscreen_images(&instance, &device, &common, &commands, &swapchain)?;
 
-        buffers.offscreen_image_views = resources::create_image_views(
+        buffers.offscreen_image_views = resources::create_multi_image_views(
             &device,
             &buffers.offscreen_images,
             vk::Format::R32_SFLOAT,
             vk::ImageAspectFlags::COLOR,
-            1,
+            resources::get_mip_levels(&swapchain),
         )?;
 
         // Render passes
@@ -141,6 +141,7 @@ impl App {
         descriptors::create_mass_descriptor_sets(
             &device,
             &buffers,
+            &swapchain,
             &vertices,
             &mut mass_descriptors,
         )?;
@@ -326,12 +327,12 @@ impl App {
             &self.swapchain,
         )?;
 
-        self.buffers.offscreen_image_views = resources::create_image_views(
+        self.buffers.offscreen_image_views = resources::create_multi_image_views(
             &self.device,
             &self.buffers.offscreen_images,
             vk::Format::R32_SFLOAT,
             vk::ImageAspectFlags::COLOR,
-            1,
+            resources::get_mip_levels(&self.swapchain),
         )?;
 
         self.gravity_descriptors.descriptor_pool =
@@ -349,6 +350,7 @@ impl App {
         descriptors::create_mass_descriptor_sets(
             &self.device,
             &self.buffers,
+            &self.swapchain,
             &self.vertices,
             &mut self.mass_descriptors,
         )?;
@@ -495,6 +497,17 @@ impl App {
             0,
             descriptor_sets,
             &[],
+        );
+
+        let mip_levels = resources::get_mip_levels(&self.swapchain);
+        let mip_levels_bytes = &mip_levels.to_ne_bytes();
+
+        self.device.cmd_push_constants(
+            command_buffer,
+            self.pipeline.mass_compute_pipeline_layout,
+            vk::ShaderStageFlags::COMPUTE,
+            0,
+            mip_levels_bytes,
         );
 
         self.device

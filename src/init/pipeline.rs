@@ -154,7 +154,16 @@ pub unsafe fn create_mass_compute_pipeline(
         .name(b"main\0");
 
     let set_layouts = &[descriptors.descriptor_set_layout];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(set_layouts);
+
+    let mip_level_push_constant_range = vk::PushConstantRange::builder()
+        .stage_flags(vk::ShaderStageFlags::COMPUTE)
+        .offset(0)
+        .size(4);
+
+    let mip_level_push_constant_ranges = &[mip_level_push_constant_range];
+    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+        .set_layouts(set_layouts)
+        .push_constant_ranges(mip_level_push_constant_ranges);
 
     pipeline.mass_compute_pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
 

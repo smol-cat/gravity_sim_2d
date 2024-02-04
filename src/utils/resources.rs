@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use vulkanalia::prelude::v1_0::*;
 
 use crate::data::{
-    commands_data::CommandsData, common_data::CommonData, swapchain_data::SwapchainData,
+    commands_data::CommandsData, common_data::CommonData, globals, swapchain_data::SwapchainData,
 };
 
 pub unsafe fn create_buffer(
@@ -243,11 +243,12 @@ pub unsafe fn create_image_view(
     image: vk::Image,
     format: vk::Format,
     aspects: vk::ImageAspectFlags,
+    base_level: u32,
     mip_levels: u32,
 ) -> Result<vk::ImageView> {
     let subresource_range = vk::ImageSubresourceRange::builder()
         .aspect_mask(aspects)
-        .base_mip_level(0)
+        .base_mip_level(base_level)
         .level_count(mip_levels)
         .base_array_layer(0)
         .layer_count(1);
@@ -270,8 +271,28 @@ pub unsafe fn create_image_views(
 ) -> Result<Vec<vk::ImageView>> {
     Ok(images
         .iter()
-        .map(|i| create_image_view(device, *i, format, aspect, mip_levels))
+        .map(|i| create_image_view(device, *i, format, aspect, 0, mip_levels))
         .collect::<Result<Vec<_>, _>>()?)
+}
+
+pub unsafe fn create_multi_image_views(
+    device: &Device,
+    images: &Vec<vk::Image>,
+    format: vk::Format,
+    aspect: vk::ImageAspectFlags,
+    mip_levels: u32,
+) -> Result<Vec<Vec<vk::ImageView>>> {
+    let mut views: Vec<Vec<vk::ImageView>> = vec![];
+    for j in 0..mip_levels {
+        views.push(
+            images
+                .iter()
+                .map(|i| create_image_view(device, *i, format, aspect, j, 1))
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+    }
+
+    Ok(views)
 }
 
 pub fn get_mip_levels(swapchain: &SwapchainData) -> u32 {

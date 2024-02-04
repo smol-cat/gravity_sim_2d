@@ -1,11 +1,15 @@
 use std::mem::size_of;
 
 use anyhow::{Ok, Result};
-use vulkanalia::prelude::v1_0::*;
+use vulkanalia::{prelude::v1_0::*, vk::DescriptorImageInfo};
 
-use crate::data::{
-    buffers_data::BuffersData, descriptors_data::DescriptorsData, globals,
-    swapchain_data::SwapchainData, uniform_buffer_object::UniformBufferObject, vertex::Vertex,
+use crate::{
+    data::{
+        buffers_data::BuffersData, descriptors_data::DescriptorsData, globals,
+        swapchain_data::SwapchainData, uniform_buffer_object::UniformBufferObject, vertex::Vertex,
+    },
+    init::buffers::create_offscreen_images,
+    utils::resources::get_mip_levels,
 };
 
 pub unsafe fn create_gravity_descriptor_set_layout(
@@ -40,7 +44,7 @@ pub unsafe fn create_mass_descriptor_set_layout(
     let image_storage_binding = vk::DescriptorSetLayoutBinding::builder()
         .binding(1)
         .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
-        .descriptor_count(1)
+        .descriptor_count(globals::MAX_MIP_LEVELS)
         .stage_flags(vk::ShaderStageFlags::COMPUTE);
 
     let bindings = &[storage_binding, image_storage_binding];
@@ -78,7 +82,7 @@ pub unsafe fn create_mass_descriptor_pool(
 
     let image_storage_buffer_size = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::STORAGE_IMAGE)
-        .descriptor_count(swapchain.swapchain_images.len() as u32);
+        .descriptor_count(swapchain.swapchain_images.len() as u32 * globals::MAX_MIP_LEVELS);
 
     let pool_sizes = &[storage_buffer_size, image_storage_buffer_size];
     let info = vk::DescriptorPoolCreateInfo::builder()
@@ -153,6 +157,7 @@ pub unsafe fn create_gravity_descriptor_sets(
 pub unsafe fn create_mass_descriptor_sets(
     device: &Device,
     buffers: &BuffersData,
+    swapchain: &SwapchainData,
     vertices: &Vec<Vertex>,
     descriptors: &mut DescriptorsData,
 ) -> Result<()> {
@@ -177,17 +182,20 @@ pub unsafe fn create_mass_descriptor_sets(
             .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
             .buffer_info(storage_infos);
 
-        let storage_image_info = vk::DescriptorImageInfo::builder()
-            .image_view(buffers.offscreen_image_views[i])
-            .image_layout(vk::ImageLayout::GENERAL);
+        let storage_image_infos = (0..get_mip_levels(swapchain) as usize)
+            .map(|j| {
+                vk::DescriptorImageInfo::builder()
+                    .image_view(buffers.offscreen_image_views[j][i])
+                    .image_layout(vk::ImageLayout::GENERAL)
+            })
+            .collect::<Vec<_>>();
 
-        let storage_image_infos = &[storage_image_info];
         let storage_image_write = vk::WriteDescriptorSet::builder()
             .dst_set(descriptors.descriptor_sets[i])
             .dst_binding(1)
             .dst_array_element(0)
             .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
-            .image_info(storage_image_infos);
+            .image_info(&storage_image_infos);
 
         device.update_descriptor_sets(
             &[storage_buffer_write, storage_image_write],

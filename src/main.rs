@@ -24,6 +24,7 @@ fn main() -> Result<()> {
         .build(&event_loop)?;
 
     let mut app = unsafe { App::create(&window)? };
+
     let mut destroying = false;
     let mut minimized = false;
 
