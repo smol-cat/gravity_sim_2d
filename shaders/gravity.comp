@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_debug_printf : enable
 
 struct Particle {
 	vec2 pos;
@@ -17,10 +18,52 @@ layout (binding = 2) uniform UBO {
 	float deltaT;
 } ubo;
 
+layout(binding = 3, r32f) uniform image2D massImage[12];
+
+layout(push_constant) uniform PushConstants {
+    layout(offset = 0) int mipLevels;
+} pcs;
+
 layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+bool within_bounds(float x, float y) {
+    return x > 0 && y > 0 && y < 1 && x < 1;
+}
 
 void main() {
     uint index = gl_GlobalInvocationID.x;  
+    float particleMass = 0.01;
+
+    vec2 force = vec2(0, 0);
+    vec2 pos = particles[index].pos;
+    vec2 posNormalized = vec2((pos.x + 1) * 0.5, (pos.y + 1) * 0.5);
+
+    for(int i = 0; i < pcs.mipLevels - 2; i++) {
+        ivec2 dims = imageSize(massImage[i]);
+        for(int x = -3; x < 3; x++) {
+            for(int y = -3; y < 3; y++) {
+                ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x) + x, floor(posNormalized.y * dims.y) + y);
+                float mass = imageLoad(massImage[i], imagePos).x;
+                if(mass == 0) {
+                    continue;
+                }
+
+                vec2 massCenter = vec2((imagePos.x + 0.5) / dims.x, (imagePos.y + 0.5) / dims.y);
+                float d = distance(posNormalized, massCenter);
+                if(d == 0) {
+                    continue;
+                }
+
+                float flatForce = (0.00001 * mass * particleMass) / pow(d, 2);
+                force = force + ((massCenter - pos) * flatForce);
+
+                if(index == 0) {
+                    debugPrintfEXT(force);
+                }
+            }
+        }
+    }
+
     particles1[index].pos = particles[index].pos + particles[index].vel.xy * ubo.deltaT;
-    particles1[index].vel = particles[index].vel;
+    particles1[index].vel = particles[index].vel + (force * ubo.deltaT);
 }

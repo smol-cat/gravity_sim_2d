@@ -1,4 +1,6 @@
 use anyhow::{anyhow, Ok, Result};
+use cgmath::num_traits::float::FloatCore;
+use cgmath::num_traits::Float;
 
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
@@ -25,7 +27,6 @@ use crate::generators::random_generator;
 use crate::init::{
     buffers, commands, descriptors, framebuffers, pipeline, render_pass, swapchain, sync,
 };
-use crate::utils::{self, resources};
 use crate::{
     data::common_data::CommonData,
     init::{device, instance},
@@ -79,16 +80,8 @@ impl App {
 
         commands::create_command_pools(&instance, &device, &common, &swapchain, &mut commands)?;
 
-        (buffers.offscreen_images, buffers.offscreen_image_memories) =
+        buffers.offscreen_images =
             buffers::create_offscreen_images(&instance, &device, &common, &commands, &swapchain)?;
-
-        buffers.offscreen_image_views = resources::create_multi_image_views(
-            &device,
-            &buffers.offscreen_images,
-            vk::Format::R32_SFLOAT,
-            vk::ImageAspectFlags::COLOR,
-            resources::get_mip_levels(&swapchain),
-        )?;
 
         // Render passes
         pipeline.render_pass =
@@ -119,7 +112,8 @@ impl App {
             &swapchain.swapchain_image_views,
         )?;
 
-        let vertices = random_generator::generate_vertices(1000000);
+        let vertices = random_generator::generate_random_vertices(1000000);
+
         buffers::create_uniform_buffers(&instance, &device, &common, &swapchain, &mut buffers)?;
 
         buffers::create_shader_storage_buffers(
@@ -134,6 +128,7 @@ impl App {
         descriptors::create_gravity_descriptor_sets(
             &device,
             &buffers,
+            &swapchain,
             &vertices,
             &mut gravity_descriptors,
         )?;
@@ -316,23 +311,12 @@ impl App {
         self.pipeline.render_pass =
             render_pass::create_render_pass(&self.device, self.swapchain.swapchain_format)?;
 
-        (
-            self.buffers.offscreen_images,
-            self.buffers.offscreen_image_memories,
-        ) = buffers::create_offscreen_images(
+        self.buffers.offscreen_images = buffers::create_offscreen_images(
             &self.instance,
             &self.device,
             &self.common,
             &self.commands,
             &self.swapchain,
-        )?;
-
-        self.buffers.offscreen_image_views = resources::create_multi_image_views(
-            &self.device,
-            &self.buffers.offscreen_images,
-            vk::Format::R32_SFLOAT,
-            vk::ImageAspectFlags::COLOR,
-            resources::get_mip_levels(&self.swapchain),
         )?;
 
         self.gravity_descriptors.descriptor_pool =
@@ -343,6 +327,7 @@ impl App {
         descriptors::create_gravity_descriptor_sets(
             &self.device,
             &self.buffers,
+            &self.swapchain,
             &self.vertices,
             &mut self.gravity_descriptors,
         )?;
@@ -471,17 +456,21 @@ impl App {
             .aspect_mask(vk::ImageAspectFlags::COLOR)
             .base_array_layer(0)
             .layer_count(1)
-            .level_count(resources::get_mip_levels(&self.swapchain));
+            .level_count(1);
 
         let subresources = &[subresource];
 
-        self.device.cmd_clear_color_image(
-            command_buffer,
-            self.buffers.offscreen_images[image_index],
-            vk::ImageLayout::GENERAL,
-            &clear_color,
-            subresources,
-        );
+        self.buffers.offscreen_images[image_index]
+            .iter()
+            .for_each(|i| {
+                self.device.cmd_clear_color_image(
+                    command_buffer,
+                    i.image,
+                    vk::ImageLayout::GENERAL,
+                    &clear_color,
+                    subresources,
+                );
+            });
 
         self.device.cmd_bind_pipeline(
             command_buffer,
@@ -499,8 +488,8 @@ impl App {
             &[],
         );
 
-        let mip_levels = resources::get_mip_levels(&self.swapchain);
-        let mip_levels_bytes = &mip_levels.to_ne_bytes();
+        let detail_levels = self.buffers.offscreen_images[0].len() as u32;
+        let mip_levels_bytes = &detail_levels.to_ne_bytes();
 
         self.device.cmd_push_constants(
             command_buffer,
@@ -510,8 +499,12 @@ impl App {
             mip_levels_bytes,
         );
 
-        self.device
-            .cmd_dispatch(command_buffer, (self.vertices.len() / 256) as u32, 1, 1);
+        self.device.cmd_dispatch(
+            command_buffer,
+            (self.vertices.len() as f32 / 256.0).ceil() as u32,
+            1,
+            1,
+        );
 
         self.device.end_command_buffer(command_buffer)?;
         Ok(())
@@ -543,8 +536,23 @@ impl App {
             &[],
         );
 
-        self.device
-            .cmd_dispatch(command_buffer, (self.vertices.len() / 256) as u32, 1, 1);
+        let detail_levels = self.buffers.offscreen_images[0].len() as u32;
+        let detail_levels_bytes = &detail_levels.to_ne_bytes();
+
+        self.device.cmd_push_constants(
+            command_buffer,
+            self.pipeline.mass_compute_pipeline_layout,
+            vk::ShaderStageFlags::COMPUTE,
+            0,
+            detail_levels_bytes,
+        );
+
+        self.device.cmd_dispatch(
+            command_buffer,
+            (self.vertices.len() as f32 / 256.0).ceil() as u32,
+            1,
+            1,
+        );
 
         self.device.end_command_buffer(command_buffer)?;
         Ok(())

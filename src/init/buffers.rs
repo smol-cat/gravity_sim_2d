@@ -1,10 +1,9 @@
 use anyhow::Result;
-use log::info;
-use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
+use std::{cmp::max, mem::size_of};
+use vulkanalia::prelude::v1_0::*;
 
-use vulkanalia::{prelude::v1_0::*, vk::ApplicationInfo};
-
+use crate::data::image_data::ImageData;
 use crate::{
     data::{
         buffers_data::BuffersData, commands_data::CommandsData, common_data::CommonData, globals,
@@ -104,25 +103,44 @@ pub unsafe fn create_offscreen_images(
     common: &CommonData,
     commands: &CommandsData,
     swapchain: &SwapchainData,
-) -> Result<(Vec<vk::Image>, Vec<vk::DeviceMemory>)> {
-    let mut images = vec![];
-    let mut image_memories = vec![];
-    let mip_levels = resources::get_mip_levels(swapchain);
+) -> Result<Vec<Vec<ImageData>>> {
+    let mut image_sets = vec![];
 
     for _ in 0..swapchain.swapchain_images.len() {
+        image_sets.push(create_downsampled_images(
+            instance, device, common, commands, swapchain,
+        )?);
+    }
+
+    Ok(image_sets)
+}
+
+unsafe fn create_downsampled_images(
+    instance: &Instance,
+    device: &Device,
+    common: &CommonData,
+    commands: &CommandsData,
+    swapchain: &SwapchainData,
+) -> Result<Vec<ImageData>> {
+    let mut images = vec![];
+
+    let mut width = swapchain.swapchain_extent.width;
+    let mut height = swapchain.swapchain_extent.height;
+
+    let min_len = globals::MIP_LEVEL_DOWNSAMLING / 2 + 1;
+
+    loop {
         let (image, image_memory) = resources::create_image(
             instance,
             device,
             common,
-            swapchain.swapchain_extent.width,
-            swapchain.swapchain_extent.height,
-            mip_levels,
+            width,
+            height,
+            1,
             vk::SampleCountFlags::_1,
             vk::Format::R32_SFLOAT,
             vk::ImageTiling::OPTIMAL,
-            vk::ImageUsageFlags::STORAGE
-                | vk::ImageUsageFlags::TRANSFER_SRC
-                | vk::ImageUsageFlags::TRANSFER_DST,
+            vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         )?;
 
@@ -133,23 +151,32 @@ pub unsafe fn create_offscreen_images(
             image,
             vk::Format::R32_SFLOAT,
             vk::ImageLayout::UNDEFINED,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            mip_levels,
+            vk::ImageLayout::GENERAL,
+            1,
         )?;
 
-        resources::generate_mip_maps(
-            device,
-            common,
-            commands,
+        let image_view = resources::create_image_view(
+            &device,
             image,
-            swapchain.swapchain_extent.width,
-            swapchain.swapchain_extent.height,
-            mip_levels,
+            vk::Format::R32_SFLOAT,
+            vk::ImageAspectFlags::COLOR,
+            0,
+            1,
         )?;
 
-        images.push(image);
-        image_memories.push(image_memory);
+        images.push(ImageData {
+            image,
+            image_memory,
+            image_view,
+        });
+
+        if width <= min_len && height <= min_len {
+            break;
+        }
+
+        height = max(1, height / globals::MIP_LEVEL_DOWNSAMLING);
+        width = max(1, width / globals::MIP_LEVEL_DOWNSAMLING);
     }
 
-    Ok((images, image_memories))
+    Ok(images)
 }

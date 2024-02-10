@@ -1,3 +1,5 @@
+use std::cmp::max;
+
 use anyhow::{anyhow, Result};
 use vulkanalia::prelude::v1_0::*;
 
@@ -109,8 +111,8 @@ pub unsafe fn transition_image_layout(
                 vk::PipelineStageFlags::TRANSFER,
                 vk::PipelineStageFlags::FRAGMENT_SHADER,
             ),
-            (vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::GENERAL) => (
-                vk::AccessFlags::TRANSFER_WRITE,
+            (vk::ImageLayout::UNDEFINED, vk::ImageLayout::GENERAL) => (
+                vk::AccessFlags::empty(),
                 vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE,
                 vk::PipelineStageFlags::TRANSFER,
                 vk::PipelineStageFlags::COMPUTE_SHADER,
@@ -267,11 +269,10 @@ pub unsafe fn create_image_views(
     images: &Vec<vk::Image>,
     format: vk::Format,
     aspect: vk::ImageAspectFlags,
-    mip_levels: u32,
 ) -> Result<Vec<vk::ImageView>> {
     Ok(images
         .iter()
-        .map(|i| create_image_view(device, *i, format, aspect, 0, mip_levels))
+        .map(|i| create_image_view(device, *i, format, aspect, 0, 1))
         .collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -295,15 +296,15 @@ pub unsafe fn create_multi_image_views(
     Ok(views)
 }
 
-pub fn get_mip_levels(swapchain: &SwapchainData) -> u32 {
-    (swapchain
-        .swapchain_extent
-        .width
-        .max(swapchain.swapchain_extent.height) as f32)
-        .log2()
-        .floor() as u32
-        + 1
-}
+//pub fn get_mip_levels(swapchain: &SwapchainData) -> u32 {
+//(swapchain
+//.swapchain_extent
+//.width
+//.max(swapchain.swapchain_extent.height) as f32)
+//.log(globals::MIP_LEVEL_DOWNSAMLING as f32)
+//.floor() as u32
+//+ 1
+//}
 
 pub unsafe fn generate_mip_maps(
     device: &Device,
@@ -372,8 +373,8 @@ pub unsafe fn generate_mip_maps(
             .dst_offsets([
                 vk::Offset3D { x: 0, y: 0, z: 0 },
                 vk::Offset3D {
-                    x: (if mip_width > 1 { mip_width / 2 } else { 1 }) as i32,
-                    y: (if mip_height > 1 { mip_height / 2 } else { 1 }) as i32,
+                    x: max(1, mip_width / globals::MIP_LEVEL_DOWNSAMLING) as i32,
+                    y: max(1, mip_height / globals::MIP_LEVEL_DOWNSAMLING) as i32,
                     z: 1,
                 },
             ])
@@ -404,12 +405,13 @@ pub unsafe fn generate_mip_maps(
             &[barrier],
         );
 
+        dbg!(mip_width, mip_height);
         if mip_width > 1 {
-            mip_width /= 2;
+            mip_width /= globals::MIP_LEVEL_DOWNSAMLING;
         }
 
         if mip_height > 1 {
-            mip_height /= 2;
+            mip_height /= globals::MIP_LEVEL_DOWNSAMLING;
         }
     }
 
