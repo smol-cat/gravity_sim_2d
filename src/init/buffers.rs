@@ -106,7 +106,7 @@ pub unsafe fn create_offscreen_images(
 ) -> Result<Vec<Vec<ImageData>>> {
     let mut image_sets = vec![];
 
-    for _ in 0..swapchain.swapchain_images.len() {
+    for _ in 0..globals::MAX_FRAMES_IN_FLIGHT {
         image_sets.push(create_downsampled_images(
             instance, device, common, commands, swapchain,
         )?);
@@ -138,7 +138,7 @@ unsafe fn create_downsampled_images(
             height,
             1,
             vk::SampleCountFlags::_1,
-            vk::Format::R32_SFLOAT,
+            vk::Format::R32G32B32A32_SFLOAT,
             vk::ImageTiling::OPTIMAL,
             vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST,
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
@@ -149,7 +149,7 @@ unsafe fn create_downsampled_images(
             common,
             commands,
             image,
-            vk::Format::R32_SFLOAT,
+            vk::Format::R32G32B32A32_SFLOAT,
             vk::ImageLayout::UNDEFINED,
             vk::ImageLayout::GENERAL,
             1,
@@ -158,7 +158,7 @@ unsafe fn create_downsampled_images(
         let image_view = resources::create_image_view(
             &device,
             image,
-            vk::Format::R32_SFLOAT,
+            vk::Format::R32G32B32A32_SFLOAT,
             vk::ImageAspectFlags::COLOR,
             0,
             1,

@@ -17,16 +17,32 @@ layout(push_constant) uniform PushConstants {
     layout(offset = 0) int mipLevels;
 } pcs;
 
+bool within_bounds(vec2 xy) {
+    return xy.x > 0 && xy.y > 0 && xy.y < 1 && xy.x < 1;
+}
+
 void main() {
     uint index = gl_GlobalInvocationID.x;  
-    for(int i = 0; i < pcs.mipLevels; i++) {
-        vec2 pos = particles[index].pos;
-        vec2 posNormalized = vec2((pos.x + 1) * 0.5, (pos.y + 1) * 0.5);
+    vec2 pos = particles[index].pos;
+    // ignoring extra "vertex" if vertex count does not divide to group count
+    // TODO mass field for vertex
+    if(pos.x == 0 && pos.y == 0) {
+        return;
+    }
 
+    vec2 posNormalized = vec2((pos.x + 1) * 0.5, (pos.y + 1) * 0.5);
+    if(!within_bounds(posNormalized)) {
+        return;
+    }
+    
+    for(int i = 0; i < pcs.mipLevels; i++) {
         ivec2 dims = imageSize(massImage[i]);
         ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x), floor(posNormalized.y * dims.y));
 
-        float currMass = imageLoad(massImage[i], imagePos).x;
-        imageStore(massImage[i], imagePos, vec4(currMass + 0.01, 1, 1, 1));
+        vec4 currData = imageLoad(massImage[i], imagePos);
+        float currMass = currData.x;
+        vec2 massCenter = vec2(currData.y, currData.z);
+
+        imageStore(massImage[i], imagePos, vec4(currMass + 0.01, 0, 0, 1));
     }
 }

@@ -1,6 +1,4 @@
 use anyhow::{anyhow, Ok, Result};
-use cgmath::num_traits::float::FloatCore;
-use cgmath::num_traits::Float;
 
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
@@ -87,7 +85,7 @@ impl App {
         pipeline.render_pass =
             render_pass::create_render_pass(&device, swapchain.swapchain_format)?;
         pipeline.mass_render_pass =
-            render_pass::create_render_pass(&device, vk::Format::R32_SFLOAT)?;
+            render_pass::create_render_pass(&device, vk::Format::R32G32B32A32_SFLOAT)?;
 
         // Descriptor layouts
         gravity_descriptors.descriptor_set_layout =
@@ -112,7 +110,8 @@ impl App {
             &swapchain.swapchain_image_views,
         )?;
 
-        let vertices = random_generator::generate_random_vertices(1000000);
+        let vertices = random_generator::generate_random_vertices(3);
+        //let vertices = random_generator::generate_vertices();
 
         buffers::create_uniform_buffers(&instance, &device, &common, &swapchain, &mut buffers)?;
 
@@ -128,7 +127,6 @@ impl App {
         descriptors::create_gravity_descriptor_sets(
             &device,
             &buffers,
-            &swapchain,
             &vertices,
             &mut gravity_descriptors,
         )?;
@@ -136,22 +134,33 @@ impl App {
         descriptors::create_mass_descriptor_sets(
             &device,
             &buffers,
-            &swapchain,
             &vertices,
             &mut mass_descriptors,
         )?;
 
-        commands.command_buffers =
-            commands::create_command_buffers(&device, &swapchain, commands.main_command_pool)?;
+        commands.command_buffers = commands::create_command_buffers(
+            &device,
+            swapchain.swapchain_images.len(),
+            commands.main_command_pool,
+        )?;
 
-        commands.gravity_compute_command_buffers =
-            commands::create_command_buffers(&device, &swapchain, commands.main_command_pool)?;
+        commands.gravity_compute_command_buffers = commands::create_command_buffers(
+            &device,
+            globals::MAX_FRAMES_IN_FLIGHT,
+            commands.main_command_pool,
+        )?;
 
-        commands.mass_compute_command_buffers =
-            commands::create_command_buffers(&device, &swapchain, commands.main_command_pool)?;
+        commands.mass_compute_command_buffers = commands::create_command_buffers(
+            &device,
+            globals::MAX_FRAMES_IN_FLIGHT,
+            commands.main_command_pool,
+        )?;
 
-        commands.image_clear_command_buffers =
-            commands::create_command_buffers(&device, &swapchain, commands.main_command_pool)?;
+        commands.image_clear_command_buffers = commands::create_command_buffers(
+            &device,
+            globals::MAX_FRAMES_IN_FLIGHT,
+            commands.main_command_pool,
+        )?;
 
         sync::create_sync_objects(&device, &swapchain, &mut sync)?;
         let _self = Self {
@@ -206,20 +215,32 @@ impl App {
         }
 
         self.sync.images_in_flight[image_index as usize] = self.sync.in_flight_fences[self.frame];
-
-        self.update_mass_command_buffers(image_index)?;
-        self.update_command_buffer(image_index)?;
-        self.update_uniform_buffer(image_index)?;
-        self.update_gravity_compute_command_buffers(image_index)?;
-
         self.device
             .reset_fences(&[self.sync.in_flight_fences[self.frame]])?;
 
-        // Mass Compute
-        let command_buffers = &[self.commands.mass_compute_command_buffers[image_index as usize]];
+        self.update_mass_command_buffers()?;
+        self.update_command_buffer(image_index)?;
+        self.update_uniform_buffer(image_index)?;
+        self.update_gravity_compute_command_buffers()?;
+        self.update_clear_command_buffer()?;
+
+        self.submit_image_clear()?;
+        self.submit_mass_compute()?;
+        self.submit_gravity_compute()?;
+
+        self.submit_render(image_index)?;
+        self.submit_present(window, image_index)?;
+
+        self.frame = (self.frame + 1) % globals::MAX_FRAMES_IN_FLIGHT;
+
+        Ok(())
+    }
+
+    unsafe fn submit_image_clear(&mut self) -> Result<()> {
+        let command_buffers = &[self.commands.image_clear_command_buffers[self.frame]];
         let wait_semaphores = &[self.sync.image_available_semaphores[self.frame]];
-        let wait_stages = &[vk::PipelineStageFlags::COMPUTE_SHADER];
-        let signal_semaphores = &[self.sync.mass_compute_finished_semaphores[self.frame]];
+        let wait_stages = &[vk::PipelineStageFlags::TOP_OF_PIPE];
+        let signal_semaphores = &[self.sync.image_clear_finished_semaphores[self.frame]];
 
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(wait_semaphores)
@@ -229,13 +250,46 @@ impl App {
 
         self.device
             .queue_submit(self.common.graphics_queue, &[submit_info], Fence::null())?;
+        Ok(())
+    }
 
-        // Gravity Compute
-        let command_buffers =
-            &[self.commands.gravity_compute_command_buffers[image_index as usize]];
+    unsafe fn submit_mass_compute(&mut self) -> Result<()> {
+        let command_buffers = &[self.commands.mass_compute_command_buffers[self.frame]];
+        let mut wait_semaphores = vec![self.sync.image_clear_finished_semaphores[self.frame]];
+        let mut wait_stages = vec![vk::PipelineStageFlags::COMPUTE_SHADER];
+        if !self.sync.first_gravity_compute {
+            wait_semaphores.push(
+                self.sync.gravity_read_finished_semaphores
+                    [(self.frame + 1) % globals::MAX_FRAMES_IN_FLIGHT],
+            );
+
+            wait_stages.push(vk::PipelineStageFlags::COMPUTE_SHADER)
+        }
+
+        let signal_semaphores = &[self.sync.mass_compute_finished_semaphores[self.frame]];
+
+        let submit_info = vk::SubmitInfo::builder()
+            .wait_semaphores(&wait_semaphores)
+            .wait_dst_stage_mask(&wait_stages)
+            .command_buffers(command_buffers)
+            .signal_semaphores(signal_semaphores);
+
+        self.device
+            .queue_submit(self.common.graphics_queue, &[submit_info], Fence::null())?;
+
+        Ok(())
+    }
+
+    unsafe fn submit_gravity_compute(&mut self) -> Result<()> {
+        let command_buffers = &[self.commands.gravity_compute_command_buffers[self.frame]];
+
         let wait_semaphores = &[self.sync.mass_compute_finished_semaphores[self.frame]];
         let wait_stages = &[vk::PipelineStageFlags::COMPUTE_SHADER];
-        let signal_semaphores = &[self.sync.gravity_compute_finished_semaphores[self.frame]];
+
+        let signal_semaphores = &[
+            self.sync.gravity_compute_finished_semaphores[self.frame],
+            self.sync.gravity_read_finished_semaphores[self.frame],
+        ];
 
         let compute_submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(wait_semaphores)
@@ -249,9 +303,11 @@ impl App {
             Fence::null(),
         )?;
 
-        // Render
-        let swapchains = &[self.swapchain.swapchain];
-        let image_indices = &[image_index as u32];
+        self.sync.first_gravity_compute = false;
+        Ok(())
+    }
+
+    unsafe fn submit_render(&mut self, image_index: usize) -> Result<()> {
         let command_buffers = &[self.commands.command_buffers[image_index as usize]];
         let wait_semaphores = &[self.sync.gravity_compute_finished_semaphores[self.frame]];
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -269,6 +325,13 @@ impl App {
             self.sync.in_flight_fences[self.frame],
         )?;
 
+        Ok(())
+    }
+
+    unsafe fn submit_present(&mut self, window: &Window, image_index: usize) -> Result<()> {
+        let swapchains = &[self.swapchain.swapchain];
+        let image_indices = &[image_index as u32];
+
         let wait_semaphores = &[self.sync.render_finished_semaphores[self.frame]];
         let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(wait_semaphores)
@@ -285,12 +348,11 @@ impl App {
         if self.resized || changed {
             self.resized = false;
             self.recreate_swapchain(window)?;
-            self.update_gravity_compute_command_buffers(image_index)?;
+            self.update_gravity_compute_command_buffers()?;
         } else if let Err(e) = result {
             return Err(anyhow!(e));
         }
 
-        self.frame = (self.frame + 1) % globals::MAX_FRAMES_IN_FLIGHT;
         Ok(())
     }
 
@@ -327,7 +389,6 @@ impl App {
         descriptors::create_gravity_descriptor_sets(
             &self.device,
             &self.buffers,
-            &self.swapchain,
             &self.vertices,
             &mut self.gravity_descriptors,
         )?;
@@ -335,7 +396,6 @@ impl App {
         descriptors::create_mass_descriptor_sets(
             &self.device,
             &self.buffers,
-            &self.swapchain,
             &self.vertices,
             &mut self.mass_descriptors,
         )?;
@@ -357,7 +417,7 @@ impl App {
 
         self.commands.command_buffers = commands::create_command_buffers(
             &self.device,
-            &self.swapchain,
+            self.swapchain.swapchain_images.len(),
             self.commands.main_command_pool,
         )?;
 
@@ -418,28 +478,8 @@ impl App {
         Ok(())
     }
 
-    unsafe fn update_uniform_buffer(&mut self, image_index: usize) -> Result<()> {
-        let curr_duration = self.start.elapsed().as_secs_f32();
-        let delta = curr_duration - self.prev_duration;
-        self.prev_duration = curr_duration;
-
-        let ubo = UniformBufferObject { delta_t: delta };
-        let memory = self.device.map_memory(
-            self.buffers.uniform_buffers_memory[image_index],
-            0,
-            size_of::<UniformBufferObject>() as u64,
-            vk::MemoryMapFlags::empty(),
-        )?;
-
-        memcpy(&ubo, memory.cast(), 1);
-
-        self.device
-            .unmap_memory(self.buffers.uniform_buffers_memory[image_index]);
-        Ok(())
-    }
-
-    unsafe fn update_mass_command_buffers(&self, image_index: usize) -> Result<()> {
-        let command_buffer = self.commands.mass_compute_command_buffers[image_index];
+    unsafe fn update_clear_command_buffer(&mut self) -> Result<()> {
+        let command_buffer = self.commands.image_clear_command_buffers[self.frame];
 
         let inheritance = vk::CommandBufferInheritanceInfo::builder();
         let info = vk::CommandBufferBeginInfo::builder()
@@ -460,7 +500,7 @@ impl App {
 
         let subresources = &[subresource];
 
-        self.buffers.offscreen_images[image_index]
+        self.buffers.offscreen_images[self.frame]
             .iter()
             .for_each(|i| {
                 self.device.cmd_clear_color_image(
@@ -471,6 +511,40 @@ impl App {
                     subresources,
                 );
             });
+
+        self.device.end_command_buffer(command_buffer)?;
+        Ok(())
+    }
+
+    unsafe fn update_uniform_buffer(&mut self, image_index: usize) -> Result<()> {
+        let curr_duration = self.start.elapsed().as_secs_f32();
+        let delta = curr_duration - self.prev_duration;
+        self.prev_duration = curr_duration;
+
+        let ubo = UniformBufferObject { delta_t: delta };
+        let memory = self.device.map_memory(
+            self.buffers.uniform_buffers_memory[image_index],
+            0,
+            size_of::<UniformBufferObject>() as u64,
+            vk::MemoryMapFlags::empty(),
+        )?;
+
+        memcpy(&ubo, memory.cast(), 1);
+
+        self.device
+            .unmap_memory(self.buffers.uniform_buffers_memory[image_index]);
+        Ok(())
+    }
+
+    unsafe fn update_mass_command_buffers(&self) -> Result<()> {
+        let command_buffer = self.commands.mass_compute_command_buffers[self.frame];
+
+        let inheritance = vk::CommandBufferInheritanceInfo::builder();
+        let info = vk::CommandBufferBeginInfo::builder()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+            .inheritance_info(&inheritance);
+
+        self.device.begin_command_buffer(command_buffer, &info)?;
 
         self.device.cmd_bind_pipeline(
             command_buffer,
@@ -510,8 +584,8 @@ impl App {
         Ok(())
     }
 
-    unsafe fn update_gravity_compute_command_buffers(&mut self, image_index: usize) -> Result<()> {
-        let command_buffer = self.commands.gravity_compute_command_buffers[image_index];
+    unsafe fn update_gravity_compute_command_buffers(&mut self) -> Result<()> {
+        let command_buffer = self.commands.gravity_compute_command_buffers[self.frame];
 
         let inheritance = vk::CommandBufferInheritanceInfo::builder();
         let info = vk::CommandBufferBeginInfo::builder()

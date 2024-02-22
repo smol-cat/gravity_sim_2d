@@ -51,6 +51,23 @@ pub unsafe fn pick_physical_device(instance: &Instance, common: &mut CommonData)
         } else {
             info!("Picked physical device: {}", properties.device_name);
             common.physical_device = physical_device;
+
+            //[
+            //vk::Format::R64G64B64_SFLOAT,
+            //vk::Format::R32G32B32_SFLOAT,
+            //vk::Format::R16G16B16_SFLOAT,
+            //vk::Format::R64G64B64A64_SFLOAT,
+            //vk::Format::R32G32B32A32_SFLOAT,
+            //vk::Format::R16G16B16A16_SFLOAT,
+            //]
+            //.iter()
+            //.for_each(|f| {
+            //dbg!(f);
+            //let format_properties =
+            //instance.get_physical_device_format_properties(physical_device, *f);
+            //dbg!(format_properties);
+            //});
+
             return Ok(());
         }
     }

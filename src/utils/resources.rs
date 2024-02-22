@@ -1,11 +1,7 @@
-use std::cmp::max;
-
 use anyhow::{anyhow, Result};
 use vulkanalia::prelude::v1_0::*;
 
-use crate::data::{
-    commands_data::CommandsData, common_data::CommonData, globals, swapchain_data::SwapchainData,
-};
+use crate::data::{commands_data::CommandsData, common_data::CommonData};
 
 pub unsafe fn create_buffer(
     instance: &Instance,
@@ -276,26 +272,6 @@ pub unsafe fn create_image_views(
         .collect::<Result<Vec<_>, _>>()?)
 }
 
-pub unsafe fn create_multi_image_views(
-    device: &Device,
-    images: &Vec<vk::Image>,
-    format: vk::Format,
-    aspect: vk::ImageAspectFlags,
-    mip_levels: u32,
-) -> Result<Vec<Vec<vk::ImageView>>> {
-    let mut views: Vec<Vec<vk::ImageView>> = vec![];
-    for j in 0..mip_levels {
-        views.push(
-            images
-                .iter()
-                .map(|i| create_image_view(device, *i, format, aspect, j, 1))
-                .collect::<Result<Vec<_>, _>>()?,
-        );
-    }
-
-    Ok(views)
-}
-
 //pub fn get_mip_levels(swapchain: &SwapchainData) -> u32 {
 //(swapchain
 //.swapchain_extent
@@ -305,132 +281,3 @@ pub unsafe fn create_multi_image_views(
 //.floor() as u32
 //+ 1
 //}
-
-pub unsafe fn generate_mip_maps(
-    device: &Device,
-    common: &CommonData,
-    commands: &CommandsData,
-    image: vk::Image,
-    width: u32,
-    height: u32,
-    mip_levels: u32,
-) -> Result<()> {
-    let command_buffer = begin_single_time_commands(device, commands)?;
-    let subresource = vk::ImageSubresourceRange::builder()
-        .aspect_mask(vk::ImageAspectFlags::COLOR)
-        .base_array_layer(0)
-        .layer_count(1)
-        .level_count(1);
-
-    let mut barrier = vk::ImageMemoryBarrier::builder()
-        .image(image)
-        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .subresource_range(subresource);
-
-    let mut mip_width = width;
-    let mut mip_height = height;
-
-    for i in 1..mip_levels {
-        barrier.subresource_range.base_mip_level = i - 1;
-        barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
-        barrier.new_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
-        barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-        barrier.dst_access_mask = vk::AccessFlags::TRANSFER_READ;
-
-        device.cmd_pipeline_barrier(
-            command_buffer,
-            vk::PipelineStageFlags::TRANSFER,
-            vk::PipelineStageFlags::TRANSFER,
-            vk::DependencyFlags::empty(),
-            &[] as &[vk::MemoryBarrier],
-            &[] as &[vk::BufferMemoryBarrier],
-            &[barrier],
-        );
-
-        let src_subresource = vk::ImageSubresourceLayers::builder()
-            .aspect_mask(vk::ImageAspectFlags::COLOR)
-            .mip_level(i - 1)
-            .base_array_layer(0)
-            .layer_count(1);
-
-        let dst_subresource = vk::ImageSubresourceLayers::builder()
-            .aspect_mask(vk::ImageAspectFlags::COLOR)
-            .mip_level(i)
-            .base_array_layer(0)
-            .layer_count(1);
-
-        let blit = vk::ImageBlit::builder()
-            .src_offsets([
-                vk::Offset3D { x: 0, y: 0, z: 0 },
-                vk::Offset3D {
-                    x: mip_width as i32,
-                    y: mip_height as i32,
-                    z: 1,
-                },
-            ])
-            .src_subresource(src_subresource)
-            .dst_offsets([
-                vk::Offset3D { x: 0, y: 0, z: 0 },
-                vk::Offset3D {
-                    x: max(1, mip_width / globals::MIP_LEVEL_DOWNSAMLING) as i32,
-                    y: max(1, mip_height / globals::MIP_LEVEL_DOWNSAMLING) as i32,
-                    z: 1,
-                },
-            ])
-            .dst_subresource(dst_subresource);
-
-        device.cmd_blit_image(
-            command_buffer,
-            image,
-            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            image,
-            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            &[blit],
-            vk::Filter::NEAREST,
-        );
-
-        barrier.old_layout = vk::ImageLayout::TRANSFER_SRC_OPTIMAL;
-        barrier.new_layout = vk::ImageLayout::GENERAL;
-        barrier.src_access_mask = vk::AccessFlags::TRANSFER_READ;
-        barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
-
-        device.cmd_pipeline_barrier(
-            command_buffer,
-            vk::PipelineStageFlags::TRANSFER,
-            vk::PipelineStageFlags::FRAGMENT_SHADER,
-            vk::DependencyFlags::empty(),
-            &[] as &[vk::MemoryBarrier],
-            &[] as &[vk::BufferMemoryBarrier],
-            &[barrier],
-        );
-
-        dbg!(mip_width, mip_height);
-        if mip_width > 1 {
-            mip_width /= globals::MIP_LEVEL_DOWNSAMLING;
-        }
-
-        if mip_height > 1 {
-            mip_height /= globals::MIP_LEVEL_DOWNSAMLING;
-        }
-    }
-
-    barrier.subresource_range.base_mip_level = mip_levels - 1;
-    barrier.old_layout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
-    barrier.new_layout = vk::ImageLayout::GENERAL;
-    barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
-    barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
-
-    device.cmd_pipeline_barrier(
-        command_buffer,
-        vk::PipelineStageFlags::TRANSFER,
-        vk::PipelineStageFlags::FRAGMENT_SHADER,
-        vk::DependencyFlags::empty(),
-        &[] as &[vk::MemoryBarrier],
-        &[] as &[vk::BufferMemoryBarrier],
-        &[barrier],
-    );
-
-    end_single_time_commands(device, common, commands, command_buffer)?;
-    Ok(())
-}

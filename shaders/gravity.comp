@@ -1,15 +1,16 @@
 #version 450
-#extension GL_EXT_debug_printf : enable
 
 struct Particle {
 	vec2 pos;
 	vec2 vel;
 };
 
+// Reading
 layout(std140, binding = 0) readonly buffer Pos {
    Particle particles[ ];
 };
 
+// Writing
 layout(std140, binding = 1) buffer Pos1 {
    Particle particles1[ ];
 };
@@ -26,44 +27,68 @@ layout(push_constant) uniform PushConstants {
 
 layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
-bool within_bounds(float x, float y) {
-    return x > 0 && y > 0 && y < 1 && x < 1;
+bool within_bounds(vec2 xy) {
+    return xy.x > 0 && xy.y > 0 && xy.y < 1 && xy.x < 1;
+}
+
+bool within_image_bounds(ivec2 xy, ivec2 dims) {
+    return xy.x > 0 && xy.y > 0 && xy.y < dims.y - 1 && xy.x < dims.x - 1;
 }
 
 void main() {
     uint index = gl_GlobalInvocationID.x;  
     float particleMass = 0.01;
 
-    vec2 force = vec2(0, 0);
     vec2 pos = particles[index].pos;
+    if(pos.x == 0 && pos.y == 0) {
+        return;
+    }
+
+    vec2 force = vec2(0, 0);
     vec2 posNormalized = vec2((pos.x + 1) * 0.5, (pos.y + 1) * 0.5);
 
-    for(int i = 0; i < pcs.mipLevels - 2; i++) {
+    for(int i = 0; i < pcs.mipLevels && within_bounds(posNormalized); i++) {
         ivec2 dims = imageSize(massImage[i]);
-        for(int x = -3; x < 3; x++) {
-            for(int y = -3; y < 3; y++) {
+        for(int x = -2; x < 3; x++) {
+            for(int y = -2; y < 3; y++) {
+                if(x == 0 && y == 0) {
+                    continue;
+                }
+
                 ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x) + x, floor(posNormalized.y * dims.y) + y);
-                float mass = imageLoad(massImage[i], imagePos).x;
+                if(!within_image_bounds(imagePos, dims)) {
+                    continue;
+                }
+
+                vec4 pxData = imageLoad(massImage[i], imagePos);
+                float mass = pxData.x;
+                //imageStore(massImage[i], imagePos, vec4(mass, 0, 0, 1));
                 if(mass == 0) {
                     continue;
                 }
 
-                vec2 massCenter = vec2((imagePos.x + 0.5) / dims.x, (imagePos.y + 0.5) / dims.y);
+                vec2 massCenter = vec2((float(imagePos.x) + 0.5) / dims.x, (float(imagePos.y) + 0.5) / dims.y);
                 float d = distance(posNormalized, massCenter);
                 if(d == 0) {
                     continue;
                 }
 
-                float flatForce = (0.00001 * mass * particleMass) / pow(d, 2);
-                force = force + ((massCenter - pos) * flatForce);
-
-                if(index == 0) {
-                    debugPrintfEXT(force);
-                }
+                float flatForce = (0.01 * mass * particleMass) / pow(d, 2);
+                vec2 localForce = (normalize(massCenter - pos) * flatForce);
+                //imageStore(massImage[i], imagePos, vec4(mass, localForce, 1));
+                force = force + localForce; 
             }
         }
     }
 
-    particles1[index].pos = particles[index].pos + particles[index].vel.xy * ubo.deltaT;
+    //ivec2 dims = imageSize(massImage[0]);
+    //ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x), floor(posNormalized.y * dims.y));
+    //vec4 particleData = imageLoad(massImage[0], imagePos);
+
+    //imageStore(massImage[0], imagePos, vec4(particleData.x, particles[index].vel, 1));
+    //imagePos.y += 1;
+    //imageStore(massImage[0], imagePos, vec4(particleData.x, particles[index].vel + (force * ubo.deltaT), 1));
+
+    particles1[index].pos = particles[index].pos + particles[index].vel * ubo.deltaT;
     particles1[index].vel = particles[index].vel + (force * ubo.deltaT);
 }

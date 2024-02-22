@@ -10,19 +10,22 @@ pub unsafe fn create_sync_objects(
 ) -> Result<()> {
     let semaphore_info = vk::SemaphoreCreateInfo::builder();
     let fence_info = vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED);
+    sync.first_gravity_compute = true;
 
     for _ in 0..globals::MAX_FRAMES_IN_FLIGHT {
         sync.image_available_semaphores
             .push(device.create_semaphore(&semaphore_info, None)?);
-
+        sync.image_clear_finished_semaphores
+            .push(device.create_semaphore(&semaphore_info, None)?);
         sync.render_finished_semaphores
             .push(device.create_semaphore(&semaphore_info, None)?);
+
         sync.gravity_compute_finished_semaphores
             .push(device.create_semaphore(&semaphore_info, None)?);
         sync.mass_compute_finished_semaphores
             .push(device.create_semaphore(&semaphore_info, None)?);
 
-        sync.offscreen_finished_semaphores
+        sync.gravity_read_finished_semaphores
             .push(device.create_semaphore(&semaphore_info, None)?);
 
         sync.in_flight_fences

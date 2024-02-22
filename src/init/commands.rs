@@ -42,12 +42,11 @@ pub unsafe fn create_command_pool(
 
 pub unsafe fn create_command_buffers(
     device: &Device,
-    swapchain: &SwapchainData,
+    count: usize,
     command_pool: vk::CommandPool,
 ) -> Result<Vec<vk::CommandBuffer>> {
-    let images_count = swapchain.swapchain_images.len();
     let mut command_buffers = vec![];
-    for _ in 0..images_count {
+    for _ in 0..count {
         let allocate_info = vk::CommandBufferAllocateInfo::builder()
             .command_pool(command_pool)
             .level(vk::CommandBufferLevel::PRIMARY)

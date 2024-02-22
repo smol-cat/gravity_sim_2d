@@ -14,8 +14,8 @@ pub unsafe fn create_pipeline(
     let vert = include_bytes!("../../shaders/vert.spv");
     let frag = include_bytes!("../../shaders/frag.spv");
 
-    let vert_shader_module = create_shader_module(device, &vert[..], false)?;
-    let frag_shader_module = create_shader_module(device, &frag[..], false)?;
+    let vert_shader_module = create_shader_module(device, &vert[..])?;
+    let frag_shader_module = create_shader_module(device, &frag[..])?;
 
     let vert_stage = vk::PipelineShaderStageCreateInfo::builder()
         .stage(vk::ShaderStageFlags::VERTEX)
@@ -115,7 +115,7 @@ pub unsafe fn create_gravity_compute_pipeline(
     pipeline: &mut PipelineData,
 ) -> Result<()> {
     let comp = include_bytes!("../../shaders/gravity.comp.spv");
-    let comp_shader_module = create_shader_module(device, &comp[..], true)?;
+    let comp_shader_module = create_shader_module(device, &comp[..])?;
     let comp_stage = vk::PipelineShaderStageCreateInfo::builder()
         .stage(vk::ShaderStageFlags::COMPUTE)
         .module(comp_shader_module)
@@ -154,7 +154,7 @@ pub unsafe fn create_mass_compute_pipeline(
     pipeline: &mut PipelineData,
 ) -> Result<()> {
     let comp = include_bytes!("../../shaders/mass.comp.spv");
-    let comp_shader_module = create_shader_module(device, &comp[..], false)?;
+    let comp_shader_module = create_shader_module(device, &comp[..])?;
 
     let comp_stage = vk::PipelineShaderStageCreateInfo::builder()
         .stage(vk::ShaderStageFlags::COMPUTE)
@@ -189,24 +189,20 @@ pub unsafe fn create_mass_compute_pipeline(
     Ok(())
 }
 
-unsafe fn create_shader_module(
-    device: &Device,
-    bytecode: &[u8],
-    enable_debugging_ext: bool,
-) -> Result<vk::ShaderModule> {
+unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::ShaderModule> {
     let bytecode = Vec::<u8>::from(bytecode);
     let (prefix, code, suffix) = bytecode.align_to::<u32>();
     if !prefix.is_empty() || !suffix.is_empty() {
         return Err(anyhow!("Shader bytecode is not properly aligned"));
     }
 
-    let mut info = vk::ShaderModuleCreateInfo::builder()
+    let info = vk::ShaderModuleCreateInfo::builder()
         .code_size(bytecode.len())
         .code(code);
 
-    if (enable_debugging_ext) {
-        info.s_type = vk::StructureType::VALIDATION_FEATURES_EXT;
-    }
+    //if (enable_debugging_ext) {
+    //info.s_type = vk::StructureType::VALIDATION_FEATURES_EXT;
+    //}
 
     Ok(device.create_shader_module(&info, None)?)
 }

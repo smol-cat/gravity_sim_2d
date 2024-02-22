@@ -111,7 +111,6 @@ pub unsafe fn create_mass_descriptor_pool(
 pub unsafe fn create_gravity_descriptor_sets(
     device: &Device,
     buffers: &BuffersData,
-    swapchain: &SwapchainData,
     vertices: &Vec<Vertex>,
     descriptors: &mut DescriptorsData,
 ) -> Result<()> {
@@ -195,7 +194,6 @@ pub unsafe fn create_gravity_descriptor_sets(
 pub unsafe fn create_mass_descriptor_sets(
     device: &Device,
     buffers: &BuffersData,
-    swapchain: &SwapchainData,
     vertices: &Vec<Vertex>,
     descriptors: &mut DescriptorsData,
 ) -> Result<()> {
@@ -208,7 +206,7 @@ pub unsafe fn create_mass_descriptor_sets(
 
     for i in 0..globals::MAX_FRAMES_IN_FLIGHT {
         let storage_buffer_info = vk::DescriptorBufferInfo::builder()
-            .buffer(buffers.storage_buffers[i])
+            .buffer(buffers.storage_buffers[(i + 1) % globals::MAX_FRAMES_IN_FLIGHT])
             .offset(0)
             .range((size_of::<Vertex>() * vertices.len()) as u64);
 
