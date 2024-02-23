@@ -30,6 +30,7 @@ void main() {
         return;
     }
 
+    float particleMass = 0.03;
     vec2 posNormalized = vec2((pos.x + 1) * 0.5, (pos.y + 1) * 0.5);
     if(!within_bounds(posNormalized)) {
         return;
@@ -43,6 +44,6 @@ void main() {
         float currMass = currData.x;
         vec2 massCenter = vec2(currData.y, currData.z);
 
-        imageStore(massImage[i], imagePos, vec4(currMass + 0.01, 0, 0, 1));
+        imageStore(massImage[i], imagePos, vec4(currMass + particleMass, 0, 0, 1));
     }
 }

@@ -37,7 +37,7 @@ bool within_image_bounds(ivec2 xy, ivec2 dims) {
 
 void main() {
     uint index = gl_GlobalInvocationID.x;  
-    float particleMass = 0.01;
+    float particleMass = 0.03;
 
     vec2 pos = particles[index].pos;
     if(pos.x == 0 && pos.y == 0) {
@@ -49,8 +49,8 @@ void main() {
 
     for(int i = 0; i < pcs.mipLevels && within_bounds(posNormalized); i++) {
         ivec2 dims = imageSize(massImage[i]);
-        for(int x = -2; x < 3; x++) {
-            for(int y = -2; y < 3; y++) {
+        for(int x = -1; x < 2; x++) {
+            for(int y = -1; y < 2; y++) {
                 if(x == 0 && y == 0) {
                     continue;
                 }
@@ -62,7 +62,6 @@ void main() {
 
                 vec4 pxData = imageLoad(massImage[i], imagePos);
                 float mass = pxData.x;
-                //imageStore(massImage[i], imagePos, vec4(mass, 0, 0, 1));
                 if(mass == 0) {
                     continue;
                 }
@@ -73,21 +72,28 @@ void main() {
                     continue;
                 }
 
-                float flatForce = (0.01 * mass * particleMass) / pow(d, 2);
-                vec2 localForce = (normalize(massCenter - pos) * flatForce);
-                //imageStore(massImage[i], imagePos, vec4(mass, localForce, 1));
+                float flatForce = (0.0000001 * mass * particleMass) / pow(d, 2);
+                vec2 localForce = (normalize(massCenter - posNormalized) * flatForce);
+                if(index == 0) {
+                    imageStore(massImage[i], imagePos, vec4(mass, localForce, flatForce));
+                }
+
                 force = force + localForce; 
             }
         }
     }
 
-    //ivec2 dims = imageSize(massImage[0]);
-    //ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x), floor(posNormalized.y * dims.y));
-    //vec4 particleData = imageLoad(massImage[0], imagePos);
+    if(index == 0) {
+        ivec2 dims = imageSize(massImage[0]);
+        ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x), floor(posNormalized.y * dims.y));
+        vec4 particleData = imageLoad(massImage[0], imagePos);
 
-    //imageStore(massImage[0], imagePos, vec4(particleData.x, particles[index].vel, 1));
-    //imagePos.y += 1;
-    //imageStore(massImage[0], imagePos, vec4(particleData.x, particles[index].vel + (force * ubo.deltaT), 1));
+        imageStore(massImage[0], imagePos, vec4(particleData.x, particles[index].vel, 1));
+        imagePos.y += 1;
+        imageStore(massImage[0], imagePos, vec4(particleData.x, particles[index].vel + (force * ubo.deltaT), 1));
+        imagePos.y -= 2;
+        imageStore(massImage[0], imagePos, vec4(particleData.x, force, 1));
+    }
 
     particles1[index].pos = particles[index].pos + particles[index].vel * ubo.deltaT;
     particles1[index].vel = particles[index].vel + (force * ubo.deltaT);

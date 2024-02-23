@@ -110,8 +110,8 @@ impl App {
             &swapchain.swapchain_image_views,
         )?;
 
-        let vertices = random_generator::generate_random_vertices(3);
-        //let vertices = random_generator::generate_vertices();
+        let vertices = random_generator::generate_random_vertices(5000000);
+        //let vertices = random_generator::generate_two_clusters(1000000);
 
         buffers::create_uniform_buffers(&instance, &device, &common, &swapchain, &mut buffers)?;
 
