@@ -24,8 +24,6 @@ bool within_bounds(vec2 xy) {
 void main() {
     uint index = gl_GlobalInvocationID.x;  
     vec2 pos = particles[index].pos;
-    // ignoring extra "vertex" if vertex count does not divide to group count
-    // TODO mass field for vertex
     if(pos.x == 0 && pos.y == 0) {
         return;
     }
@@ -39,11 +37,15 @@ void main() {
     for(int i = 0; i < pcs.mipLevels; i++) {
         ivec2 dims = imageSize(massImage[i]);
         ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x), floor(posNormalized.y * dims.y));
-
+        vec2 imagePosFrac = vec2(posNormalized.x * dims.x, posNormalized.y * dims.y); 
+        vec2 particleMassCenter = imagePosFrac - imagePos;
+        
         vec4 currData = imageLoad(massImage[i], imagePos);
         float currMass = currData.x;
-        vec2 massCenter = vec2(currData.y, currData.z);
+        vec2 currMassCenter = vec2(currData.y, currData.z);
 
-        imageStore(massImage[i], imagePos, vec4(currMass + particleMass, 0, 0, 1));
+        vec2 weightedMassCenter = (currMass * currMassCenter + particleMass * particleMassCenter) / (currMass + particleMass);
+
+        imageStore(massImage[i], imagePos, vec4(currMass + particleMass, weightedMassCenter, 1));
     }
 }

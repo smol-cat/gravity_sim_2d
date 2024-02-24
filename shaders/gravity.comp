@@ -66,33 +66,18 @@ void main() {
                     continue;
                 }
 
-                vec2 massCenter = vec2((float(imagePos.x) + 0.5) / dims.x, (float(imagePos.y) + 0.5) / dims.y);
+                vec2 massCenter = pxData.yz;
                 float d = distance(posNormalized, massCenter);
                 if(d == 0) {
                     continue;
                 }
 
-                float flatForce = (0.0000001 * mass * particleMass) / pow(d, 2);
+                float flatForce = (0.00001 * mass * particleMass) / pow(d, 2);
                 vec2 localForce = (normalize(massCenter - posNormalized) * flatForce);
-                if(index == 0) {
-                    imageStore(massImage[i], imagePos, vec4(mass, localForce, flatForce));
-                }
 
                 force = force + localForce; 
             }
         }
-    }
-
-    if(index == 0) {
-        ivec2 dims = imageSize(massImage[0]);
-        ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x), floor(posNormalized.y * dims.y));
-        vec4 particleData = imageLoad(massImage[0], imagePos);
-
-        imageStore(massImage[0], imagePos, vec4(particleData.x, particles[index].vel, 1));
-        imagePos.y += 1;
-        imageStore(massImage[0], imagePos, vec4(particleData.x, particles[index].vel + (force * ubo.deltaT), 1));
-        imagePos.y -= 2;
-        imageStore(massImage[0], imagePos, vec4(particleData.x, force, 1));
     }
 
     particles1[index].pos = particles[index].pos + particles[index].vel * ubo.deltaT;
