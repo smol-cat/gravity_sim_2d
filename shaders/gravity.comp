@@ -49,8 +49,8 @@ void main() {
 
     for(int i = 0; i < pcs.mipLevels && within_bounds(posNormalized); i++) {
         ivec2 dims = imageSize(massImage[i]);
-        for(int x = -1; x < 2; x++) {
-            for(int y = -1; y < 2; y++) {
+        for(int x = -3; x < 4; x++) {
+            for(int y = -3; y < 4; y++) {
                 if(x == 0 && y == 0) {
                     continue;
                 }
@@ -66,16 +66,16 @@ void main() {
                     continue;
                 }
 
-                vec2 massCenter = pxData.yz;
+                vec2 massCenter = vec2((float(imagePos.x) + pxData.y) / dims.x, (float(imagePos.y) + pxData.z) / dims.y);
                 float d = distance(posNormalized, massCenter);
-                if(d == 0) {
+                if(d < 0.03) {
                     continue;
                 }
 
-                float flatForce = (0.00001 * mass * particleMass) / pow(d, 2);
+                float flatForce = (100.0 * mass * particleMass) / pow(d * 2000, 2);
                 vec2 localForce = (normalize(massCenter - posNormalized) * flatForce);
 
-                force = force + localForce; 
+                force += localForce; 
             }
         }
     }

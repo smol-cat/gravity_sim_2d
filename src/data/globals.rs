@@ -12,4 +12,4 @@ pub const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 pub const MAX_MIP_LEVELS: u32 = 12;
-pub const MIP_LEVEL_DOWNSAMLING: u32 = 3;
+pub const MIP_LEVEL_DOWNSAMLING: u32 = 7;
