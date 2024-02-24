@@ -1,0 +1,51 @@
+#version 450
+
+struct Particle {
+	vec2 pos;
+	vec2 vel;
+};
+
+layout(std140, binding = 0) buffer Pos {
+   Particle particles[ ];
+};
+
+layout(binding = 1, r32f) uniform image2D massImage[12];
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(push_constant) uniform PushConstants {
+    layout(offset = 0) int mipLevels;
+} pcs;
+
+bool within_bounds(vec2 xy) {
+    return xy.x > 0 && xy.y > 0 && xy.y < 1 && xy.x < 1;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;  
+    vec2 pos = particles[index].pos;
+    if(pos.x == 0 && pos.y == 0) {
+        return;
+    }
+
+    float particleMass = 0.03;
+    vec2 posNormalized = vec2((pos.x + 1) * 0.5, (pos.y + 1) * 0.5);
+    if(!within_bounds(posNormalized)) {
+        return;
+    }
+    
+    for(int i = 0; i < pcs.mipLevels; i++) {
+        ivec2 dims = imageSize(massImage[i]);
+        ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x), floor(posNormalized.y * dims.y));
+        vec2 imagePosFrac = vec2(posNormalized.x * dims.x, posNormalized.y * dims.y); 
+        vec2 particleMassCenter = imagePosFrac - imagePos;
+        
+        vec4 currData = imageLoad(massImage[i], imagePos);
+        float currMass = currData.x;
+        vec2 currMassCenter = vec2(currData.y, currData.z);
+
+        vec2 weightedMassCenter = (currMass * currMassCenter + particleMass * particleMassCenter) / (currMass + particleMass);
+
+        imageStore(massImage[i], imagePos, vec4(currMass + particleMass, weightedMassCenter, 1));
+    }
+}

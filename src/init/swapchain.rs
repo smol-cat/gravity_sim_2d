@@ -1,12 +1,13 @@
 use anyhow::{Ok, Result};
-use log::info;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::KhrSwapchainExtension;
 use winit::window::Window;
 
 use crate::{
     data::{common_data::CommonData, swapchain_data::SwapchainData},
-    utils::{queue_family_indices::QueueFamilyIndices, swapchain_support::SwapchainSupport, utils},
+    utils::{
+        queue_family_indices::QueueFamilyIndices, resources, swapchain_support::SwapchainSupport,
+    },
 };
 
 pub unsafe fn create_swapchain(
@@ -24,7 +25,6 @@ pub unsafe fn create_swapchain(
     let swaphchain_extent = get_swapchain_extent(window, support.capabilities);
 
     let mut image_count = support.capabilities.min_image_count + 1;
-    info!("Swapchain images count: {}", image_count);
 
     if support.capabilities.max_image_count != 0
         && image_count > support.capabilities.max_image_count
@@ -114,17 +114,10 @@ pub unsafe fn create_swapchain_image_views(
     device: &Device,
     swapchain: &SwapchainData,
 ) -> Result<Vec<vk::ImageView>> {
-    Ok(swapchain
-        .swapchain_images
-        .iter()
-        .map(|i| {
-            utils::create_image_view(
-                device,
-                *i,
-                swapchain.swapchain_format,
-                vk::ImageAspectFlags::COLOR,
-                1,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?)
+    resources::create_image_views(
+        device,
+        &swapchain.swapchain_images,
+        swapchain.swapchain_format,
+        vk::ImageAspectFlags::COLOR,
+    )
 }

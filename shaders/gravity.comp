@@ -1,0 +1,85 @@
+#version 450
+
+struct Particle {
+	vec2 pos;
+	vec2 vel;
+};
+
+// Reading
+layout(std140, binding = 0) readonly buffer Pos {
+   Particle particles[ ];
+};
+
+// Writing
+layout(std140, binding = 1) buffer Pos1 {
+   Particle particles1[ ];
+};
+
+layout (binding = 2) uniform UBO {
+	float deltaT;
+} ubo;
+
+layout(binding = 3, r32f) uniform image2D massImage[12];
+
+layout(push_constant) uniform PushConstants {
+    layout(offset = 0) int mipLevels;
+} pcs;
+
+layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+bool within_bounds(vec2 xy) {
+    return xy.x > 0 && xy.y > 0 && xy.y < 1 && xy.x < 1;
+}
+
+bool within_image_bounds(ivec2 xy, ivec2 dims) {
+    return xy.x > 0 && xy.y > 0 && xy.y < dims.y - 1 && xy.x < dims.x - 1;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;  
+    float particleMass = 0.03;
+
+    vec2 pos = particles[index].pos;
+    if(pos.x == 0 && pos.y == 0) {
+        return;
+    }
+
+    vec2 force = vec2(0, 0);
+    vec2 posNormalized = vec2((pos.x + 1) * 0.5, (pos.y + 1) * 0.5);
+
+    for(int i = 0; i < pcs.mipLevels && within_bounds(posNormalized); i++) {
+        ivec2 dims = imageSize(massImage[i]);
+        for(int x = -1; x < 2; x++) {
+            for(int y = -1; y < 2; y++) {
+                if(x == 0 && y == 0) {
+                    continue;
+                }
+
+                ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x) + x, floor(posNormalized.y * dims.y) + y);
+                if(!within_image_bounds(imagePos, dims)) {
+                    continue;
+                }
+
+                vec4 pxData = imageLoad(massImage[i], imagePos);
+                float mass = pxData.x;
+                if(mass == 0) {
+                    continue;
+                }
+
+                vec2 massCenter = pxData.yz;
+                float d = distance(posNormalized, massCenter);
+                if(d == 0) {
+                    continue;
+                }
+
+                float flatForce = (0.00001 * mass * particleMass) / pow(d, 2);
+                vec2 localForce = (normalize(massCenter - posNormalized) * flatForce);
+
+                force = force + localForce; 
+            }
+        }
+    }
+
+    particles1[index].pos = particles[index].pos + particles[index].vel * ubo.deltaT;
+    particles1[index].vel = particles[index].vel + (force * ubo.deltaT);
+}

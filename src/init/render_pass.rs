@@ -2,14 +2,9 @@ use anyhow::{Ok, Result};
 use vulkanalia::vk;
 use vulkanalia::{prelude::v1_0::*, vk::SampleCountFlags};
 
-use crate::data::swapchain_data::SwapchainData;
-
-pub unsafe fn create_render_pass(
-    device: &Device,
-    swapchain: &SwapchainData,
-) -> Result<vk::RenderPass> {
+pub unsafe fn create_render_pass(device: &Device, format: vk::Format) -> Result<vk::RenderPass> {
     let color_attachment = vk::AttachmentDescription::builder()
-        .format(swapchain.swapchain_format)
+        .format(format)
         .samples(SampleCountFlags::_1)
         .load_op(vk::AttachmentLoadOp::CLEAR)
         .store_op(vk::AttachmentStoreOp::STORE)

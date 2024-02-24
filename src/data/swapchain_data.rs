@@ -8,5 +8,4 @@ pub struct SwapchainData {
 
     pub swapchain_format: vk::Format,
     pub swapchain_extent: vk::Extent2D,
-    pub framebuffers: Vec<vk::Framebuffer>,
 }

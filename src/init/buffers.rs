@@ -1,9 +1,9 @@
 use anyhow::Result;
-use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
-
+use std::{cmp::max, mem::size_of};
 use vulkanalia::prelude::v1_0::*;
 
+use crate::data::image_data::ImageData;
 use crate::{
     data::{
         buffers_data::BuffersData, commands_data::CommandsData, common_data::CommonData, globals,
@@ -95,4 +95,88 @@ pub unsafe fn create_uniform_buffers(
     }
 
     Ok(())
+}
+
+pub unsafe fn create_offscreen_images(
+    instance: &Instance,
+    device: &Device,
+    common: &CommonData,
+    commands: &CommandsData,
+    swapchain: &SwapchainData,
+) -> Result<Vec<Vec<ImageData>>> {
+    let mut image_sets = vec![];
+
+    for _ in 0..globals::MAX_FRAMES_IN_FLIGHT {
+        image_sets.push(create_downsampled_images(
+            instance, device, common, commands, swapchain,
+        )?);
+    }
+
+    Ok(image_sets)
+}
+
+unsafe fn create_downsampled_images(
+    instance: &Instance,
+    device: &Device,
+    common: &CommonData,
+    commands: &CommandsData,
+    swapchain: &SwapchainData,
+) -> Result<Vec<ImageData>> {
+    let mut images = vec![];
+
+    let mut width = swapchain.swapchain_extent.width;
+    let mut height = swapchain.swapchain_extent.height;
+
+    let min_len = globals::MIP_LEVEL_DOWNSAMLING / 2 + 1;
+
+    loop {
+        let (image, image_memory) = resources::create_image(
+            instance,
+            device,
+            common,
+            width,
+            height,
+            1,
+            vk::SampleCountFlags::_1,
+            vk::Format::R32G32B32A32_SFLOAT,
+            vk::ImageTiling::OPTIMAL,
+            vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::TRANSFER_DST,
+            vk::MemoryPropertyFlags::DEVICE_LOCAL,
+        )?;
+
+        resources::transition_image_layout(
+            device,
+            common,
+            commands,
+            image,
+            vk::Format::R32G32B32A32_SFLOAT,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::GENERAL,
+            1,
+        )?;
+
+        let image_view = resources::create_image_view(
+            &device,
+            image,
+            vk::Format::R32G32B32A32_SFLOAT,
+            vk::ImageAspectFlags::COLOR,
+            0,
+            1,
+        )?;
+
+        images.push(ImageData {
+            image,
+            image_memory,
+            image_view,
+        });
+
+        if width <= min_len && height <= min_len {
+            break;
+        }
+
+        height = max(1, height / globals::MIP_LEVEL_DOWNSAMLING);
+        width = max(1, width / globals::MIP_LEVEL_DOWNSAMLING);
+    }
+
+    Ok(images)
 }

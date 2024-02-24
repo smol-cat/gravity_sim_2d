@@ -95,7 +95,7 @@ pub unsafe fn create_pipeline(
         .rasterization_state(&rasterization_state)
         .multisample_state(&multisample_state)
         .color_blend_state(&color_blend_state)
-        .layout(pipeline.pipeline_layout)
+        .layout(pipeline.mass_compute_pipeline_layout)
         .render_pass(pipeline.render_pass)
         .subpass(0);
 
@@ -109,12 +109,12 @@ pub unsafe fn create_pipeline(
     Ok(())
 }
 
-pub unsafe fn create_compute_pipeline(
+pub unsafe fn create_gravity_compute_pipeline(
     device: &Device,
     descriptors: &DescriptorsData,
     pipeline: &mut PipelineData,
 ) -> Result<()> {
-    let comp = include_bytes!("../../shaders/comp.spv");
+    let comp = include_bytes!("../../shaders/gravity.comp.spv");
     let comp_shader_module = create_shader_module(device, &comp[..])?;
     let comp_stage = vk::PipelineShaderStageCreateInfo::builder()
         .stage(vk::ShaderStageFlags::COMPUTE)
@@ -122,17 +122,66 @@ pub unsafe fn create_compute_pipeline(
         .name(b"main\0");
 
     let set_layouts = &[descriptors.descriptor_set_layout];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder().set_layouts(set_layouts);
 
-    pipeline.compute_pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
+    let mip_level_push_constant_range = vk::PushConstantRange::builder()
+        .stage_flags(vk::ShaderStageFlags::COMPUTE)
+        .offset(0)
+        .size(4);
+    let mip_level_push_constant_ranges = &[mip_level_push_constant_range];
+    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+        .set_layouts(set_layouts)
+        .push_constant_ranges(mip_level_push_constant_ranges);
+
+    pipeline.gravity_compute_pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
 
     let info = vk::ComputePipelineCreateInfo::builder()
         .stage(comp_stage)
-        .layout(pipeline.compute_pipeline_layout);
+        .layout(pipeline.gravity_compute_pipeline_layout);
 
     let infos = &[info];
 
-    pipeline.compute_pipeline = device
+    pipeline.gravity_compute_pipeline = device
+        .create_compute_pipelines(vk::PipelineCache::null(), infos, None)?
+        .0[0];
+
+    device.destroy_shader_module(comp_shader_module, None);
+    Ok(())
+}
+
+pub unsafe fn create_mass_compute_pipeline(
+    device: &Device,
+    descriptors: &DescriptorsData,
+    pipeline: &mut PipelineData,
+) -> Result<()> {
+    let comp = include_bytes!("../../shaders/mass.comp.spv");
+    let comp_shader_module = create_shader_module(device, &comp[..])?;
+
+    let comp_stage = vk::PipelineShaderStageCreateInfo::builder()
+        .stage(vk::ShaderStageFlags::COMPUTE)
+        .module(comp_shader_module)
+        .name(b"main\0");
+
+    let set_layouts = &[descriptors.descriptor_set_layout];
+
+    let mip_level_push_constant_range = vk::PushConstantRange::builder()
+        .stage_flags(vk::ShaderStageFlags::COMPUTE)
+        .offset(0)
+        .size(4);
+
+    let mip_level_push_constant_ranges = &[mip_level_push_constant_range];
+    let layout_info = vk::PipelineLayoutCreateInfo::builder()
+        .set_layouts(set_layouts)
+        .push_constant_ranges(mip_level_push_constant_ranges);
+
+    pipeline.mass_compute_pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
+
+    let info = vk::ComputePipelineCreateInfo::builder()
+        .stage(comp_stage)
+        .layout(pipeline.mass_compute_pipeline_layout);
+
+    let infos = &[info];
+
+    pipeline.mass_compute_pipeline = device
         .create_compute_pipelines(vk::PipelineCache::null(), infos, None)?
         .0[0];
 
@@ -150,6 +199,10 @@ unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::S
     let info = vk::ShaderModuleCreateInfo::builder()
         .code_size(bytecode.len())
         .code(code);
+
+    //if (enable_debugging_ext) {
+    //info.s_type = vk::StructureType::VALIDATION_FEATURES_EXT;
+    //}
 
     Ok(device.create_shader_module(&info, None)?)
 }
