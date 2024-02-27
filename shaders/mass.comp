@@ -33,7 +33,7 @@ void main() {
     if(!within_bounds(posNormalized)) {
         return;
     }
-    
+
     for(int i = 0; i < pcs.mipLevels; i++) {
         ivec2 dims = imageSize(massImage[i]);
         ivec2 imagePos = ivec2(floor(posNormalized.x * dims.x), floor(posNormalized.y * dims.y));

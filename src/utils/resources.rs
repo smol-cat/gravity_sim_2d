@@ -1,11 +1,10 @@
 use anyhow::{anyhow, Result};
 use vulkanalia::prelude::v1_0::*;
 
-use crate::data::{commands_data::CommandsData, common_data::CommonData};
+use crate::data::{commands_data::CommandsData, common_data::CommonData, globals};
 
 pub unsafe fn create_buffer(
     instance: &Instance,
-    device: &Device,
     common: &CommonData,
     size: vk::DeviceSize,
     usage: vk::BufferUsageFlags,
@@ -16,8 +15,8 @@ pub unsafe fn create_buffer(
         .usage(usage)
         .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-    let buffer = device.create_buffer(&buffer_info, None)?;
-    let requirements = device.get_buffer_memory_requirements(buffer);
+    let buffer = globals::get_device().create_buffer(&buffer_info, None)?;
+    let requirements = globals::get_device().get_buffer_memory_requirements(buffer);
     let memory_info = vk::MemoryAllocateInfo::builder()
         .allocation_size(requirements.size)
         .memory_type_index(get_memory_type_index(
@@ -27,8 +26,8 @@ pub unsafe fn create_buffer(
             requirements,
         )?);
 
-    let buffer_memory = device.allocate_memory(&memory_info, None)?;
-    device.bind_buffer_memory(buffer, buffer_memory, 0)?;
+    let buffer_memory = globals::get_device().allocate_memory(&memory_info, None)?;
+    globals::get_device().bind_buffer_memory(buffer, buffer_memory, 0)?;
 
     Ok((buffer, buffer_memory))
 }
@@ -50,23 +49,21 @@ unsafe fn get_memory_type_index(
 }
 
 pub unsafe fn copy_buffer(
-    device: &Device,
     common: &CommonData,
     commands: &CommandsData,
     source: vk::Buffer,
     destination: vk::Buffer,
     size: vk::DeviceSize,
 ) -> Result<()> {
-    let command_buffer = begin_single_time_commands(device, commands)?;
+    let command_buffer = begin_single_time_commands(commands)?;
     let regions = vk::BufferCopy::builder().size(size);
-    device.cmd_copy_buffer(command_buffer, source, destination, &[regions]);
-    end_single_time_commands(device, common, commands, command_buffer)?;
+    globals::get_device().cmd_copy_buffer(command_buffer, source, destination, &[regions]);
+    end_single_time_commands(common, commands, command_buffer)?;
 
     Ok(())
 }
 
 pub unsafe fn transition_image_layout(
-    device: &Device,
     common: &CommonData,
     commands: &CommandsData,
     image: vk::Image,
@@ -116,7 +113,7 @@ pub unsafe fn transition_image_layout(
             _ => return Err(anyhow!("Unsupported image layout transition")),
         };
 
-    let command_buffer = begin_single_time_commands(device, commands)?;
+    let command_buffer = begin_single_time_commands(commands)?;
 
     let subresource = vk::ImageSubresourceRange::builder()
         .aspect_mask(aspect_mask)
@@ -135,7 +132,7 @@ pub unsafe fn transition_image_layout(
         .src_access_mask(src_access_mask)
         .dst_access_mask(dst_access_mask);
 
-    device.cmd_pipeline_barrier(
+    globals::get_device().cmd_pipeline_barrier(
         command_buffer,
         src_stage_mask,
         dst_stage_mask,
@@ -145,51 +142,46 @@ pub unsafe fn transition_image_layout(
         &[barrier],
     );
 
-    end_single_time_commands(device, common, commands, command_buffer)?;
+    end_single_time_commands(common, commands, command_buffer)?;
 
     Ok(())
 }
 
-pub unsafe fn begin_single_time_commands(
-    device: &Device,
-    commands: &CommandsData,
-) -> Result<vk::CommandBuffer> {
+pub unsafe fn begin_single_time_commands(commands: &CommandsData) -> Result<vk::CommandBuffer> {
     let info = vk::CommandBufferAllocateInfo::builder()
         .level(vk::CommandBufferLevel::PRIMARY)
         .command_pool(commands.main_command_pool)
         .command_buffer_count(1);
 
-    let command_buffer = device.allocate_command_buffers(&info)?[0];
+    let command_buffer = globals::get_device().allocate_command_buffers(&info)?[0];
 
     let info =
         vk::CommandBufferBeginInfo::builder().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
-    device.begin_command_buffer(command_buffer, &info)?;
+    globals::get_device().begin_command_buffer(command_buffer, &info)?;
     Ok(command_buffer)
 }
 
 pub unsafe fn end_single_time_commands(
-    device: &Device,
     common: &CommonData,
     commands: &CommandsData,
     command_buffer: vk::CommandBuffer,
 ) -> Result<()> {
-    device.end_command_buffer(command_buffer)?;
+    globals::get_device().end_command_buffer(command_buffer)?;
 
     let command_buffers = &[command_buffer];
     let info = vk::SubmitInfo::builder().command_buffers(command_buffers);
 
-    device.queue_submit(common.graphics_queue, &[info], vk::Fence::null())?;
-    device.queue_wait_idle(common.graphics_queue)?;
+    globals::get_device().queue_submit(common.graphics_queue, &[info], vk::Fence::null())?;
+    globals::get_device().queue_wait_idle(common.graphics_queue)?;
 
-    device.free_command_buffers(commands.main_command_pool, &[command_buffer]);
+    globals::get_device().free_command_buffers(commands.main_command_pool, &[command_buffer]);
 
     Ok(())
 }
 
 pub unsafe fn create_image(
     instance: &Instance,
-    device: &Device,
     common: &CommonData,
     width: u32,
     height: u32,
@@ -217,9 +209,9 @@ pub unsafe fn create_image(
         .sharing_mode(vk::SharingMode::EXCLUSIVE)
         .flags(vk::ImageCreateFlags::empty()); // voxels material
 
-    let image = device.create_image(&info, None)?;
+    let image = globals::get_device().create_image(&info, None)?;
 
-    let requirements = device.get_image_memory_requirements(image);
+    let requirements = globals::get_device().get_image_memory_requirements(image);
 
     let info = vk::MemoryAllocateInfo::builder()
         .allocation_size(requirements.size)
@@ -230,14 +222,13 @@ pub unsafe fn create_image(
             requirements,
         )?);
 
-    let image_memory = device.allocate_memory(&info, None)?;
-    device.bind_image_memory(image, image_memory, 0)?;
+    let image_memory = globals::get_device().allocate_memory(&info, None)?;
+    globals::get_device().bind_image_memory(image, image_memory, 0)?;
 
     Ok((image, image_memory))
 }
 
 pub unsafe fn create_image_view(
-    device: &Device,
     image: vk::Image,
     format: vk::Format,
     aspects: vk::ImageAspectFlags,
@@ -257,18 +248,17 @@ pub unsafe fn create_image_view(
         .view_type(vk::ImageViewType::_2D)
         .subresource_range(subresource_range);
 
-    Ok(device.create_image_view(&info, None)?)
+    Ok(globals::get_device().create_image_view(&info, None)?)
 }
 
 pub unsafe fn create_image_views(
-    device: &Device,
     images: &Vec<vk::Image>,
     format: vk::Format,
     aspect: vk::ImageAspectFlags,
 ) -> Result<Vec<vk::ImageView>> {
     Ok(images
         .iter()
-        .map(|i| create_image_view(device, *i, format, aspect, 0, 1))
+        .map(|i| create_image_view(*i, format, aspect, 0, 1))
         .collect::<Result<Vec<_>, _>>()?)
 }
 

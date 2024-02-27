@@ -8,9 +8,7 @@ use crate::data::{
     swapchain_data::SwapchainData, uniform_buffer_object::UniformBufferObject, vertex::Vertex,
 };
 
-pub unsafe fn create_gravity_descriptor_set_layout(
-    device: &Device,
-) -> Result<vk::DescriptorSetLayout> {
+pub unsafe fn create_gravity_descriptor_set_layout() -> Result<vk::DescriptorSetLayout> {
     let storage_binding = vk::DescriptorSetLayoutBinding::builder()
         .binding(0)
         .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
@@ -36,12 +34,10 @@ pub unsafe fn create_gravity_descriptor_set_layout(
         image_storage_binding,
     ];
     let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
-    Ok(device.create_descriptor_set_layout(&info, None)?)
+    Ok(globals::get_device().create_descriptor_set_layout(&info, None)?)
 }
 
-pub unsafe fn create_mass_descriptor_set_layout(
-    device: &Device,
-) -> Result<vk::DescriptorSetLayout> {
+pub unsafe fn create_mass_descriptor_set_layout() -> Result<vk::DescriptorSetLayout> {
     let storage_binding = vk::DescriptorSetLayoutBinding::builder()
         .binding(0)
         .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
@@ -56,11 +52,10 @@ pub unsafe fn create_mass_descriptor_set_layout(
 
     let bindings = &[storage_binding, image_storage_binding];
     let info = vk::DescriptorSetLayoutCreateInfo::builder().bindings(bindings);
-    Ok(device.create_descriptor_set_layout(&info, None)?)
+    Ok(globals::get_device().create_descriptor_set_layout(&info, None)?)
 }
 
 pub unsafe fn create_gravity_descriptor_pool(
-    device: &Device,
     swapchain: &SwapchainData,
 ) -> Result<vk::DescriptorPool> {
     let storage_buffer_size = vk::DescriptorPoolSize::builder()
@@ -85,13 +80,10 @@ pub unsafe fn create_gravity_descriptor_pool(
         .pool_sizes(pool_sizes)
         .max_sets(swapchain.swapchain_images.len() as u32);
 
-    Ok(device.create_descriptor_pool(&info, None)?)
+    Ok(globals::get_device().create_descriptor_pool(&info, None)?)
 }
 
-pub unsafe fn create_mass_descriptor_pool(
-    device: &Device,
-    swapchain: &SwapchainData,
-) -> Result<vk::DescriptorPool> {
+pub unsafe fn create_mass_descriptor_pool(swapchain: &SwapchainData) -> Result<vk::DescriptorPool> {
     let storage_buffer_size = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::STORAGE_BUFFER)
         .descriptor_count(swapchain.swapchain_images.len() as u32);
@@ -105,11 +97,10 @@ pub unsafe fn create_mass_descriptor_pool(
         .pool_sizes(pool_sizes)
         .max_sets(swapchain.swapchain_images.len() as u32);
 
-    Ok(device.create_descriptor_pool(&info, None)?)
+    Ok(globals::get_device().create_descriptor_pool(&info, None)?)
 }
 
 pub unsafe fn create_gravity_descriptor_sets(
-    device: &Device,
     buffers: &BuffersData,
     vertices: &Vec<Vertex>,
     descriptors: &mut DescriptorsData,
@@ -119,7 +110,7 @@ pub unsafe fn create_gravity_descriptor_sets(
         .descriptor_pool(descriptors.descriptor_pool)
         .set_layouts(&layouts);
 
-    descriptors.descriptor_sets = device.allocate_descriptor_sets(&info)?;
+    descriptors.descriptor_sets = globals::get_device().allocate_descriptor_sets(&info)?;
 
     for i in 0..globals::MAX_FRAMES_IN_FLIGHT {
         let info = vk::DescriptorBufferInfo::builder()
@@ -177,7 +168,7 @@ pub unsafe fn create_gravity_descriptor_sets(
             .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
             .image_info(&storage_image_infos);
 
-        device.update_descriptor_sets(
+        globals::get_device().update_descriptor_sets(
             &[
                 ssbo_last_frame_write,
                 ssbo_curr_frame_write,
@@ -192,7 +183,6 @@ pub unsafe fn create_gravity_descriptor_sets(
 }
 
 pub unsafe fn create_mass_descriptor_sets(
-    device: &Device,
     buffers: &BuffersData,
     vertices: &Vec<Vertex>,
     descriptors: &mut DescriptorsData,
@@ -202,7 +192,7 @@ pub unsafe fn create_mass_descriptor_sets(
         .descriptor_pool(descriptors.descriptor_pool)
         .set_layouts(&layouts);
 
-    descriptors.descriptor_sets = device.allocate_descriptor_sets(&info)?;
+    descriptors.descriptor_sets = globals::get_device().allocate_descriptor_sets(&info)?;
 
     for i in 0..globals::MAX_FRAMES_IN_FLIGHT {
         let storage_buffer_info = vk::DescriptorBufferInfo::builder()
@@ -234,7 +224,7 @@ pub unsafe fn create_mass_descriptor_sets(
             .descriptor_type(vk::DescriptorType::STORAGE_IMAGE)
             .image_info(&storage_image_infos);
 
-        device.update_descriptor_sets(
+        globals::get_device().update_descriptor_sets(
             &[storage_buffer_write, storage_image_write],
             &[] as &[vk::CopyDescriptorSet],
         );

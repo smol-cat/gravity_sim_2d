@@ -1,5 +1,7 @@
 use anyhow::Result;
 use app::App;
+use data::globals;
+use log::info;
 use vulkanalia::prelude::v1_0::*;
 use winit::{
     dpi::LogicalSize,
@@ -41,9 +43,11 @@ fn main() -> Result<()> {
                 destroying = true;
                 *control_flow = ControlFlow::Exit;
                 unsafe {
-                    app.device.device_wait_idle().unwrap();
+                    globals::get_device().device_wait_idle().unwrap();
                     app.destroy();
                 }
+
+                info!("DONE");
             }
             Event::WindowEvent {
                 event: WindowEvent::Resized(size),
