@@ -13,6 +13,10 @@ impl Drop for PipelineData {
     fn drop(&mut self) {
         unsafe {
             info!("destroying pipeline data");
+            if globals::get_device_opt().is_none() {
+                return;
+            }
+
             if globals::get_device().device_wait_idle().is_err() {
                 warn!("destroying pipeline data failed");
                 return;

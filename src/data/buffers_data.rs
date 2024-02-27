@@ -1,4 +1,4 @@
-use log::warn;
+use log::{info, warn};
 use vulkanalia::prelude::v1_0::*;
 
 use super::{globals, image_data::ImageData};
@@ -17,6 +17,11 @@ pub struct BuffersData {
 impl Drop for BuffersData {
     fn drop(&mut self) {
         unsafe {
+            info!("destroying buffers data");
+            if globals::get_device_opt().is_none() {
+                return;
+            }
+
             if globals::get_device().device_wait_idle().is_err() {
                 warn!("destroying buffers data failed");
                 return;

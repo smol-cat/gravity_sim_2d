@@ -20,6 +20,10 @@ impl Drop for SwapchainData {
     fn drop(&mut self) {
         unsafe {
             info!("destroying swapchain data");
+            if globals::get_device_opt().is_none() {
+                return;
+            }
+
             if globals::get_device().device_wait_idle().is_err() {
                 warn!("destroying swapchain data failed");
                 return;

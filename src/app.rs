@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Ok, Result};
-use log::info;
 
 use std::mem::size_of;
 use std::ptr::copy_nonoverlapping as memcpy;
@@ -9,8 +8,8 @@ use vulkanalia::prelude::v1_0::*;
 use vulkanalia::window as vk_window;
 use winit::window::Window;
 
+use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
-use vulkanalia::vk::{DeviceFaultInfoEXT, KhrSurfaceExtension};
 use vulkanalia::vk::{ExtDebugUtilsExtension, Fence};
 
 use crate::data::buffers_data::BuffersData;
@@ -346,7 +345,6 @@ impl App {
         globals::get_device().device_wait_idle()?;
         self.destroy_swapchain();
 
-        self.swapchain = SwapchainData::default();
         swapchain::create_swapchain(&self.common, &self.instance, window, &mut self.swapchain)?;
 
         self.swapchain.swapchain_image_views =
@@ -591,7 +589,7 @@ impl App {
         self.gravity_descriptors = DescriptorsData::default();
         self.mass_descriptors = DescriptorsData::default();
 
-        globals::get_device().destroy_device(None);
+        globals::destroy_device();
         self.instance.destroy_surface_khr(self.common.surface, None);
 
         if globals::VALIDATION_ENABLED {

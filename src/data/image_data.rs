@@ -14,6 +14,10 @@ impl Drop for ImageData {
     fn drop(&mut self) {
         unsafe {
             info!("destroying image");
+            if globals::get_device_opt().is_none() {
+                return;
+            }
+
             if globals::get_device().device_wait_idle().is_err() {
                 warn!("destroying image failed");
                 return;

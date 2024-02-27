@@ -1,7 +1,7 @@
 use log::{info, warn};
 use vulkanalia::prelude::v1_0::*;
 
-use crate::data::globals;
+use crate::{data::globals, init::device};
 
 #[derive(Clone, Debug, Default)]
 pub struct SyncData {
@@ -24,6 +24,10 @@ impl Drop for SyncData {
     fn drop(&mut self) {
         unsafe {
             info!("destroying sync data");
+            if globals::get_device_opt().is_none() {
+                return;
+            }
+
             if globals::get_device().device_wait_idle().is_err() {
                 warn!("destroying sync data failed");
                 return;

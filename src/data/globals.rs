@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use vulkanalia::prelude::v1_0::*;
 
 pub const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
@@ -19,6 +20,10 @@ pub const SHADER_FORCE_REGION_RADIUS: u32 = 3;
 
 static mut DEVICE: Option<Device> = None;
 
+pub fn get_device_opt() -> Option<Device> {
+    unsafe { DEVICE.clone() }
+}
+
 pub fn get_device() -> Device {
     unsafe { DEVICE.clone().unwrap() }
 }
@@ -26,5 +31,12 @@ pub fn get_device() -> Device {
 pub fn set_device(device: &Device) {
     unsafe {
         DEVICE = Some(device.clone());
+    }
+}
+
+pub fn destroy_device() {
+    unsafe {
+        DEVICE.clone().unwrap().destroy_device(None);
+        DEVICE = None;
     }
 }
