@@ -1,8 +1,9 @@
 use anyhow::Result;
 use vulkanalia::prelude::v1_0::*;
 
+use crate::data::globals;
+
 pub unsafe fn create_framebuffers(
-    device: &Device,
     render_pass: vk::RenderPass,
     extent: &vk::Extent2D,
     image_views: &Vec<vk::ImageView>,
@@ -18,7 +19,7 @@ pub unsafe fn create_framebuffers(
                 .height(extent.height)
                 .layers(1);
 
-            device.create_framebuffer(&create_info, None)
+            globals::get_device().create_framebuffer(&create_info, None)
         })
         .collect::<Result<Vec<_>, _>>()?;
 

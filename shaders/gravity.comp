@@ -28,7 +28,7 @@ layout(push_constant) uniform PushConstants {
 layout (local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
 
 bool within_bounds(vec2 xy) {
-    return xy.x > 0 && xy.y > 0 && xy.y < 1 && xy.x < 1;
+    return xy.x > -0.1 && xy.y > -0.1 && xy.y < 1.1 && xy.x < 1.1;
 }
 
 bool within_image_bounds(ivec2 xy, ivec2 dims) {
@@ -46,11 +46,14 @@ void main() {
 
     vec2 force = vec2(0, 0);
     vec2 posNormalized = vec2((pos.x + 1) * 0.5, (pos.y + 1) * 0.5);
+    if(!within_bounds(posNormalized)){
+        return;
+    }
 
-    for(int i = 0; i < pcs.mipLevels && within_bounds(posNormalized); i++) {
+    for(int i = 0; i < pcs.mipLevels; i++) {
         ivec2 dims = imageSize(massImage[i]);
-        for(int x = -3; x < 4; x++) {
-            for(int y = -3; y < 4; y++) {
+        for(int x = -2; x < 3; x++) {
+            for(int y = -2; y < 3; y++) {
                 if(x == 0 && y == 0) {
                     continue;
                 }
@@ -68,11 +71,11 @@ void main() {
 
                 vec2 massCenter = vec2((float(imagePos.x) + pxData.y) / dims.x, (float(imagePos.y) + pxData.z) / dims.y);
                 float d = distance(posNormalized, massCenter);
-                if(d < 0.03) {
+                if(d < 0.12) {
                     continue;
                 }
 
-                float flatForce = (100.0 * mass * particleMass) / pow(d * 2000, 2);
+                float flatForce = (30000.0 * mass * particleMass) / pow(d * 6000, 2);
                 vec2 localForce = (normalize(massCenter - posNormalized) * flatForce);
 
                 force += localForce; 

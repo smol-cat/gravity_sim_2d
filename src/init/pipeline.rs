@@ -2,20 +2,19 @@ use anyhow::{anyhow, Ok, Result};
 use vulkanalia::prelude::v1_0::*;
 
 use crate::data::{
-    descriptors_data::DescriptorsData, pipeline_data::PipelineData, swapchain_data::SwapchainData,
-    vertex::Vertex,
+    descriptors_data::DescriptorsData, globals, pipeline_data::PipelineData,
+    swapchain_data::SwapchainData, vertex::Vertex,
 };
 
 pub unsafe fn create_pipeline(
-    device: &Device,
     swapchain: &SwapchainData,
     pipeline: &mut PipelineData,
 ) -> Result<()> {
     let vert = include_bytes!("../../shaders/vert.spv");
     let frag = include_bytes!("../../shaders/frag.spv");
 
-    let vert_shader_module = create_shader_module(device, &vert[..])?;
-    let frag_shader_module = create_shader_module(device, &frag[..])?;
+    let vert_shader_module = create_shader_module(&vert[..])?;
+    let frag_shader_module = create_shader_module(&frag[..])?;
 
     let vert_stage = vk::PipelineShaderStageCreateInfo::builder()
         .stage(vk::ShaderStageFlags::VERTEX)
@@ -80,7 +79,7 @@ pub unsafe fn create_pipeline(
         .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
     let layout_info = vk::PipelineLayoutCreateInfo::builder();
-    pipeline.pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
+    pipeline.pipeline_layout = globals::get_device().create_pipeline_layout(&layout_info, None)?;
 
     let multisample_state = vk::PipelineMultisampleStateCreateInfo::builder()
         .rasterization_samples(vk::SampleCountFlags::_1)
@@ -95,27 +94,26 @@ pub unsafe fn create_pipeline(
         .rasterization_state(&rasterization_state)
         .multisample_state(&multisample_state)
         .color_blend_state(&color_blend_state)
-        .layout(pipeline.mass_compute_pipeline_layout)
-        .render_pass(pipeline.render_pass)
+        .layout(pipeline.pipeline_layout)
+        .render_pass(swapchain.render_pass)
         .subpass(0);
 
-    pipeline.pipeline = device
+    pipeline.pipeline = globals::get_device()
         .create_graphics_pipelines(vk::PipelineCache::null(), &[info], None)?
         .0[0];
 
-    device.destroy_shader_module(vert_shader_module, None);
-    device.destroy_shader_module(frag_shader_module, None);
+    globals::get_device().destroy_shader_module(vert_shader_module, None);
+    globals::get_device().destroy_shader_module(frag_shader_module, None);
 
     Ok(())
 }
 
 pub unsafe fn create_gravity_compute_pipeline(
-    device: &Device,
     descriptors: &DescriptorsData,
     pipeline: &mut PipelineData,
 ) -> Result<()> {
     let comp = include_bytes!("../../shaders/gravity.comp.spv");
-    let comp_shader_module = create_shader_module(device, &comp[..])?;
+    let comp_shader_module = create_shader_module(&comp[..])?;
     let comp_stage = vk::PipelineShaderStageCreateInfo::builder()
         .stage(vk::ShaderStageFlags::COMPUTE)
         .module(comp_shader_module)
@@ -132,29 +130,28 @@ pub unsafe fn create_gravity_compute_pipeline(
         .set_layouts(set_layouts)
         .push_constant_ranges(mip_level_push_constant_ranges);
 
-    pipeline.gravity_compute_pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
+    pipeline.pipeline_layout = globals::get_device().create_pipeline_layout(&layout_info, None)?;
 
     let info = vk::ComputePipelineCreateInfo::builder()
         .stage(comp_stage)
-        .layout(pipeline.gravity_compute_pipeline_layout);
+        .layout(pipeline.pipeline_layout);
 
     let infos = &[info];
 
-    pipeline.gravity_compute_pipeline = device
+    pipeline.pipeline = globals::get_device()
         .create_compute_pipelines(vk::PipelineCache::null(), infos, None)?
         .0[0];
 
-    device.destroy_shader_module(comp_shader_module, None);
+    globals::get_device().destroy_shader_module(comp_shader_module, None);
     Ok(())
 }
 
 pub unsafe fn create_mass_compute_pipeline(
-    device: &Device,
     descriptors: &DescriptorsData,
     pipeline: &mut PipelineData,
 ) -> Result<()> {
     let comp = include_bytes!("../../shaders/mass.comp.spv");
-    let comp_shader_module = create_shader_module(device, &comp[..])?;
+    let comp_shader_module = create_shader_module(&comp[..])?;
 
     let comp_stage = vk::PipelineShaderStageCreateInfo::builder()
         .stage(vk::ShaderStageFlags::COMPUTE)
@@ -173,23 +170,23 @@ pub unsafe fn create_mass_compute_pipeline(
         .set_layouts(set_layouts)
         .push_constant_ranges(mip_level_push_constant_ranges);
 
-    pipeline.mass_compute_pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
+    pipeline.pipeline_layout = globals::get_device().create_pipeline_layout(&layout_info, None)?;
 
     let info = vk::ComputePipelineCreateInfo::builder()
         .stage(comp_stage)
-        .layout(pipeline.mass_compute_pipeline_layout);
+        .layout(pipeline.pipeline_layout);
 
     let infos = &[info];
 
-    pipeline.mass_compute_pipeline = device
+    pipeline.pipeline = globals::get_device()
         .create_compute_pipelines(vk::PipelineCache::null(), infos, None)?
         .0[0];
 
-    device.destroy_shader_module(comp_shader_module, None);
+    globals::get_device().destroy_shader_module(comp_shader_module, None);
     Ok(())
 }
 
-unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::ShaderModule> {
+unsafe fn create_shader_module(bytecode: &[u8]) -> Result<vk::ShaderModule> {
     let bytecode = Vec::<u8>::from(bytecode);
     let (prefix, code, suffix) = bytecode.align_to::<u32>();
     if !prefix.is_empty() || !suffix.is_empty() {
@@ -204,5 +201,5 @@ unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::S
     //info.s_type = vk::StructureType::VALIDATION_FEATURES_EXT;
     //}
 
-    Ok(device.create_shader_module(&info, None)?)
+    Ok(globals::get_device().create_shader_module(&info, None)?)
 }

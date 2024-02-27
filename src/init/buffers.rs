@@ -14,7 +14,6 @@ use crate::{
 
 pub unsafe fn create_shader_storage_buffers(
     instance: &Instance,
-    device: &Device,
     vertices: &Vec<Vertex>,
     common: &CommonData,
     commands: &CommandsData,
@@ -26,21 +25,24 @@ pub unsafe fn create_shader_storage_buffers(
 
     let (staging_buffer, staging_buffer_memory) = resources::create_buffer(
         instance,
-        device,
         common,
         size,
         vk::BufferUsageFlags::TRANSFER_SRC,
         vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
     )?;
 
-    let memory = device.map_memory(staging_buffer_memory, 0, size, vk::MemoryMapFlags::empty())?;
+    let memory = globals::get_device().map_memory(
+        staging_buffer_memory,
+        0,
+        size,
+        vk::MemoryMapFlags::empty(),
+    )?;
     memcpy(vertices.as_ptr(), memory.cast(), vertices.len());
-    device.unmap_memory(staging_buffer_memory);
+    globals::get_device().unmap_memory(staging_buffer_memory);
 
     for _ in 0..globals::MAX_FRAMES_IN_FLIGHT {
         let (storage_buffer, storage_buffer_memory) = resources::create_buffer(
             instance,
-            device,
             common,
             size,
             vk::BufferUsageFlags::TRANSFER_DST
@@ -49,21 +51,14 @@ pub unsafe fn create_shader_storage_buffers(
             vk::MemoryPropertyFlags::DEVICE_LOCAL,
         )?;
 
-        resources::copy_buffer(
-            device,
-            common,
-            commands,
-            staging_buffer,
-            storage_buffer,
-            size,
-        )?;
+        resources::copy_buffer(common, commands, staging_buffer, storage_buffer, size)?;
 
         storage_buffers.push(storage_buffer);
         storage_buffer_memories.push(storage_buffer_memory);
     }
 
-    device.destroy_buffer(staging_buffer, None);
-    device.free_memory(staging_buffer_memory, None);
+    globals::get_device().destroy_buffer(staging_buffer, None);
+    globals::get_device().free_memory(staging_buffer_memory, None);
 
     buffers.storage_buffers = storage_buffers;
     buffers.storage_buffer_memories = storage_buffer_memories;
@@ -72,7 +67,6 @@ pub unsafe fn create_shader_storage_buffers(
 
 pub unsafe fn create_uniform_buffers(
     instance: &Instance,
-    device: &Device,
     common: &CommonData,
     swapchain: &SwapchainData,
     buffers: &mut BuffersData,
@@ -83,7 +77,6 @@ pub unsafe fn create_uniform_buffers(
     for _ in 0..swapchain.swapchain_images.len() {
         let (uniform_buffer, uniform_buffer_memory) = resources::create_buffer(
             instance,
-            device,
             common,
             size_of::<UniformBufferObject>() as u64,
             vk::BufferUsageFlags::UNIFORM_BUFFER,
@@ -99,16 +92,14 @@ pub unsafe fn create_uniform_buffers(
 
 pub unsafe fn create_offscreen_images(
     instance: &Instance,
-    device: &Device,
     common: &CommonData,
     commands: &CommandsData,
-    swapchain: &SwapchainData,
 ) -> Result<Vec<Vec<ImageData>>> {
     let mut image_sets = vec![];
 
     for _ in 0..globals::MAX_FRAMES_IN_FLIGHT {
         image_sets.push(create_downsampled_images(
-            instance, device, common, commands, swapchain,
+            instance, common, commands,
         )?);
     }
 
@@ -117,22 +108,19 @@ pub unsafe fn create_offscreen_images(
 
 unsafe fn create_downsampled_images(
     instance: &Instance,
-    device: &Device,
     common: &CommonData,
     commands: &CommandsData,
-    swapchain: &SwapchainData,
 ) -> Result<Vec<ImageData>> {
     let mut images = vec![];
 
-    let mut width = swapchain.swapchain_extent.width;
-    let mut height = swapchain.swapchain_extent.height;
+    let mut width = globals::MASS_FIELD_SIZE;
+    let mut height = globals::MASS_FIELD_SIZE;
 
-    let min_len = globals::MIP_LEVEL_DOWNSAMLING / 2 + 1;
+    let min_len = globals::SHADER_FORCE_REGION_RADIUS / 2 + 1;
 
     loop {
         let (image, image_memory) = resources::create_image(
             instance,
-            device,
             common,
             width,
             height,
@@ -145,7 +133,6 @@ unsafe fn create_downsampled_images(
         )?;
 
         resources::transition_image_layout(
-            device,
             common,
             commands,
             image,
@@ -156,7 +143,6 @@ unsafe fn create_downsampled_images(
         )?;
 
         let image_view = resources::create_image_view(
-            &device,
             image,
             vk::Format::R32G32B32A32_SFLOAT,
             vk::ImageAspectFlags::COLOR,

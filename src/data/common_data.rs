@@ -9,7 +9,6 @@ pub struct CommonData {
     pub graphics_queue: vk::Queue,
     pub present_queue: vk::Queue,
     pub compute_queue: vk::Queue,
-    pub offscreen_queue: vk::Queue,
 
     pub mip_levels: u32,
 }
