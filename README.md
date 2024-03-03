@@ -3,6 +3,8 @@
 This project is me experimenting with Rust and Vulkan by developing
 a gravity simulator of particles.
 
+![simulation](images/simulator.png)
+
 The gravity calculation for each particle is optimized i a way so
 that we avoid n-squared complexity of the whole thing. It is done by
 not calculating cumulative force among all particles but only by 
